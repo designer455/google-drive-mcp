@@ -14,18 +14,34 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-function getBaseLayout({ title, activeNav, content }) {
+function getBaseLayout({ title, activeNav, content, description }) {
   const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
   const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://www.digitonsdevelopment.com');
   const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
+
+  const pageTitle = activeNav === 'home'
+    ? 'Digitons Google Drive MCP V2'
+    : `${escapeHtml(title)} - Digitons Google Drive MCP V2`;
+
+  const metaDescription = description || (activeNav === 'home'
+    ? 'Digitons Google Drive MCP V2 is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'
+    : `${escapeHtml(title)} for Digitons Google Drive MCP V2.`);
+
+  const canonicalUrl = `https://mcp-v2.digitonsdevelopment.com${activeNav === 'home' ? '/' : '/' + activeNav}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(title)} - Digitons Google Drive MCP</title>
-  <meta name="description" content="${escapeHtml(title)} for Digitons Google Drive MCP v2.">
+  <title>${pageTitle}</title>
+  <meta name="description" content="${escapeHtml(metaDescription)}">
+  <link rel="canonical" href="${canonicalUrl}">
+  <meta property="og:title" content="${pageTitle}">
+  <meta property="og:description" content="${escapeHtml(metaDescription)}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${canonicalUrl}">
+  <meta property="og:site_name" content="Digitons Google Drive MCP V2">
   <style>
     :root {
       --bg: #0f172a;
@@ -77,15 +93,6 @@ function getBaseLayout({ title, activeNav, content }) {
       display: flex;
       align-items: center;
       gap: 10px;
-    }
-    .brand-badge {
-      background: #0284c7;
-      color: #fff;
-      font-size: 11px;
-      padding: 2px 7px;
-      border-radius: 999px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
     }
     nav {
       display: flex;
@@ -259,7 +266,7 @@ function getBaseLayout({ title, activeNav, content }) {
   <header>
     <div class="nav-container">
       <a href="/" class="brand">
-        📁 Digitons Google Drive <span class="brand-badge">v2.0</span>
+        📁 Digitons Google Drive MCP V2
       </a>
       <nav>
         <a href="/" ${activeNav === 'home' ? 'class="active"' : ''}>Overview</a>
@@ -276,7 +283,7 @@ function getBaseLayout({ title, activeNav, content }) {
 
   <footer>
     <div class="footer-container">
-      <div>© ${new Date().getFullYear()} ${companyName}. All rights reserved.</div>
+      <div>© ${new Date().getFullYear()} ${companyName}. All rights reserved. • Hosted on digitonsdevelopment.com</div>
       <div class="footer-links">
         <a href="/">Overview</a>
         <a href="/support">Support</a>
@@ -296,6 +303,7 @@ function getBaseLayout({ title, activeNav, content }) {
 export function handleRootPage(req, res) {
   const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
   const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
+  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://www.digitonsdevelopment.com');
 
   const content = `
     <div class="card">
@@ -303,41 +311,49 @@ export function handleRootPage(req, res) {
         <span class="badge badge-success">Production Ready</span>
         <span style="font-size:13px;color:#94a3b8;">Universal Model Context Protocol Server</span>
       </div>
-      <h1>Digitons Google Drive MCP</h1>
+      <h1>Digitons Google Drive MCP V2</h1>
       <p class="page-subtitle">Multi-User Remote MCP Server for ChatGPT & OpenAI Agents</p>
 
       <p>
-        <strong>Digitons Google Drive MCP v2</strong> allows ChatGPT users to securely search, read, create, and manage their personal or organizational Google Drive files directly from their ChatGPT conversations.
+        <strong>Digitons Google Drive MCP V2</strong> is a secure, production-ready remote Model Context Protocol (MCP) server developed and operated by <strong>${companyName}</strong>. It seamlessly connects ChatGPT and OpenAI Agents with the user's authorized Google Drive, allowing AI assistants to search, read, create, and organize files and Workspace documents directly from conversational prompts.
       </p>
 
       <div class="info-box">
-        <strong>Multi-User Architecture:</strong> Every connected ChatGPT user authenticates their own individual Google account through per-user OAuth 2.0. There are no shared credentials, global accounts, or cross-tenant data leakage.
+        <strong>Multi-User Remote Architecture:</strong> Every connected user authenticates their own individual Google account through isolated, per-user Google OAuth 2.0. There are no shared service accounts, master credentials, or cross-tenant data access.
       </div>
 
-      <h2>Key Features</h2>
+      <h2>What the Application Does</h2>
+      <p>
+        <strong>Digitons Google Drive MCP V2</strong> translates conversational instructions from ChatGPT and OpenAI Agents into authorized Google Drive API operations in real time:
+      </p>
       <ul>
-        <li><strong>Read Tools:</strong> File search, folder navigation, document reading, metadata inspection, spreadsheet cell reading, slide deck inspection, and permission listing.</li>
-        <li><strong>Write Tools:</strong> File upload, folder creation, content updating, file renaming, moving, copying, and non-destructive trash deletion.</li>
-        <li><strong>Rich Workspace Support:</strong> Native integration with Google Docs, Sheets, and Slides.</li>
-        <li><strong>Enterprise Security:</strong> Strict OAuth 2.0 with PKCE S256, isolated per-user token storage, and single-use hashed link tokens.</li>
+        <li><strong>Search & Read:</strong> Query Google Drive with semantic keywords, browse folders, read plain-text and binary files, export Google Docs/Sheets/Slides, and inspect detailed file metadata.</li>
+        <li><strong>Create & Organize:</strong> Create new folders, upload text/data files, move items between folders, rename documents, copy files, and safely move unwanted files to Trash.</li>
+        <li><strong>Google Sheets & Workspace:</strong> Create new Google Spreadsheets, read cell ranges in A1 notation, update tabular data, append rows, and generate presentation slide decks.</li>
+        <li><strong>Access Governance:</strong> List file sharing permissions and audit who has access to your items.</li>
       </ul>
+
+      <h2>Verified Publisher & Hosting Information</h2>
+      <p>
+        This service is officially developed and operated by <strong>${companyName}</strong>, hosted at <code>https://mcp-v2.digitonsdevelopment.com</code> under the verified parent domain <strong><a href="${companyWebsite}" target="_blank" rel="noopener" style="color:#38bdf8;">digitonsdevelopment.com</a></strong>. All OAuth 2.0 authorizations are conducted directly and securely between your client, this server, and Google APIs.
+      </p>
 
       <h2>Quick Links & Legal Documentation</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:16px;margin-top:16px;">
         <div class="step-card">
           <div class="step-number">Help & Setup</div>
           <h3 style="margin-top:0;"><a href="/support" style="color:#38bdf8;text-decoration:none;">Support Center →</a></h3>
-          <p style="font-size:13px;margin-bottom:0;">Setup instructions, troubleshooting common connection issues, and account disconnect guidance.</p>
+          <p style="font-size:13px;margin-bottom:0;">Step-by-step setup guide, connection instructions, and troubleshooting tips.</p>
         </div>
         <div class="step-card">
-          <div class="step-number">Legal</div>
+          <div class="step-number">Privacy</div>
           <h3 style="margin-top:0;"><a href="/privacy" style="color:#38bdf8;text-decoration:none;">Privacy Policy →</a></h3>
-          <p style="font-size:13px;margin-bottom:0;">Transparent disclosure of data handling, token storage, and Google API policy compliance.</p>
+          <p style="font-size:13px;margin-bottom:0;">Full disclosure of data protection, credential isolation, and Google API User Data Policy compliance.</p>
         </div>
         <div class="step-card">
           <div class="step-number">Terms</div>
           <h3 style="margin-top:0;"><a href="/terms" style="color:#38bdf8;text-decoration:none;">Terms of Service →</a></h3>
-          <p style="font-size:13px;margin-bottom:0;">Acceptable use guidelines, service limitations, and operational responsibilities.</p>
+          <p style="font-size:13px;margin-bottom:0;">Acceptable use guidelines, operational limits, safety safeguards, and legal terms.</p>
         </div>
       </div>
     </div>
@@ -365,11 +381,11 @@ export function handlePrivacyPage(req, res) {
         <span style="font-size:13px;color:#94a3b8;">Last Updated: September 2026</span>
       </div>
       <h1>Privacy Policy</h1>
-      <p class="page-subtitle">How Digitons Google Drive MCP handles and protects your data</p>
+      <p class="page-subtitle">How Digitons Google Drive MCP V2 handles and protects your data</p>
 
       <h2>1. Overview & Service Identity</h2>
       <p>
-        This Privacy Policy explains how <strong>Digitons Google Drive MCP V2</strong> ("the Service"), developed and operated by <strong>${companyName}</strong>, collects, processes, stores, and protects user data when connecting ChatGPT to Google Drive.
+        This Privacy Policy explains how <strong>Digitons Google Drive MCP V2</strong> ("the Service"), developed and operated by <strong>${companyName}</strong>, collects, processes, stores, and protects user data when connecting ChatGPT and OpenAI Agents to Google Drive.
       </p>
 
       <h2>2. Multi-User Architecture & Zero Shared Credentials</h2>
@@ -480,7 +496,7 @@ export function handleTermsPage(req, res) {
         <span style="font-size:13px;color:#94a3b8;">Last Updated: September 2026</span>
       </div>
       <h1>Terms of Service</h1>
-      <p class="page-subtitle">Terms governing the use of Digitons Google Drive MCP</p>
+      <p class="page-subtitle">Terms governing the use of Digitons Google Drive MCP V2</p>
 
       <h2>1. Acceptance of Terms</h2>
       <p>
@@ -572,10 +588,10 @@ export function handleSupportPage(req, res) {
     <div class="card">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span class="badge badge-success">Help Center</span>
-        <span style="font-size:13px;color:#94a3b8;">Digitons Google Drive MCP v2</span>
+        <span style="font-size:13px;color:#94a3b8;">Digitons Google Drive MCP V2</span>
       </div>
       <h1>Support & Help Center</h1>
-      <p class="page-subtitle">Guides, troubleshooting, and contact for Google Drive MCP</p>
+      <p class="page-subtitle">Guides, troubleshooting, and contact for Digitons Google Drive MCP V2</p>
 
       <h2>How to Connect Your Google Drive</h2>
       <div class="step-card">
@@ -638,7 +654,7 @@ export function handleSupportPage(req, res) {
       <p>You can disconnect your Google Drive at any time through either of these methods:</p>
       <ul>
         <li><strong>Through ChatGPT:</strong> Ask ChatGPT to disconnect your Google Drive account, which calls <code>POST /auth/google/disconnect</code>. This revokes the tokens with Google and immediately purges local credentials.</li>
-        <li><strong>Through Google Account:</strong> Visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" style="color:#38bdf8;">Google Third-Party Apps & Services</a> and click <em>Remove Access</em> for Digitons Google Drive.</li>
+        <li><strong>Through Google Account:</strong> Visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" style="color:#38bdf8;">Google Third-Party Apps & Services</a> and click <em>Remove Access</em> for Digitons Google Drive MCP V2.</li>
       </ul>
 
       <h2>Contact Support</h2>

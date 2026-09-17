@@ -273,7 +273,7 @@ export async function handleGoogleOAuthCallback(req, res) {
     </div>
 
     <p style="color:#e2e8f0;font-weight:500;">You can now close this tab and return to ChatGPT.</p>
-    <div class="footer">Digitons Google Drive MCP v2</div>
+    <div class="footer">Digitons Google Drive MCP V2</div>
   </div>
 </body>
 </html>`);

@@ -113,7 +113,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     server: 'digitons-google-drive-mcp-v2',
     version: '2.0.0',
-    build: 'v2.0.1-sheets-requestbody-fix',
+    build: 'v2.0.2-branding-verification-fix',
     timestamp: new Date().toISOString()
   });
 });

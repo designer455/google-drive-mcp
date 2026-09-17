@@ -107,12 +107,16 @@ test('3. GET /support returns 200 and renders support & troubleshooting guide', 
   assert.ok(res.body.includes('/terms'));
 });
 
-test('4. GET / returns 200 and renders root landing page with links to all legal pages', async () => {
+test('4. GET / returns 200 and renders root landing page with exact branding and links', async () => {
   const res = await makeRequest({ path: '/' });
 
   assert.equal(res.status, 200);
   assert.ok(res.headers['content-type'].includes('text/html'));
-  assert.ok(res.body.includes('Digitons Google Drive MCP'));
+  assert.ok(res.body.includes('Digitons Google Drive MCP V2'));
+  assert.ok(res.body.includes('<title>Digitons Google Drive MCP V2</title>'));
+  assert.ok(res.body.includes('<h1>Digitons Google Drive MCP V2</h1>'));
+  assert.ok(res.body.includes('Digitons Google Drive MCP V2 is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'));
+  assert.ok(res.body.includes('digitonsdevelopment.com'));
   assert.ok(res.body.includes('/privacy'));
   assert.ok(res.body.includes('/terms'));
   assert.ok(res.body.includes('/support'));
