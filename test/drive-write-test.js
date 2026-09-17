@@ -197,9 +197,16 @@ const mockSheetsClient = {
   spreadsheets: {
     create: async (params) => {
       mockSheetsClient.lastCreateParams = params;
-      const resource = params.resource || params.requestBody;
+      // Google API rejects resource if passed at top level because it gets serialized into query string
+      if (params.resource !== undefined) {
+        const err = new Error('Invalid JSON payload received. Unknown name "resource[properties][title]": Cannot bind query parameter.');
+        err.code = 400;
+        err.response = { status: 400, data: { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "resource[properties][title]": Cannot bind query parameter.', status: 'INVALID_ARGUMENT' } } };
+        throw err;
+      }
+      const requestBody = params.requestBody;
       // Fail if empty sheets array is sent or invalid field mask syntax
-      if (resource?.sheets && resource.sheets.length === 0) {
+      if (requestBody?.sheets && requestBody.sheets.length === 0) {
         const err = new Error('Invalid empty sheets array');
         err.code = 400;
         err.response = { status: 400, data: { error: { code: 400, message: 'Invalid empty sheets array', status: 'INVALID_ARGUMENT' } } };
@@ -213,8 +220,8 @@ const mockSheetsClient = {
       }
 
       const spreadsheetId = `sheet_${Date.now()}`;
-      const title = resource?.properties?.title || 'Untitled';
-      const initialSheets = (resource?.sheets || [{ properties: { sheetId: 0, title: 'Sheet1' } }]).map((s, idx) => ({
+      const title = requestBody?.properties?.title || 'Untitled';
+      const initialSheets = (requestBody?.sheets || [{ properties: { sheetId: 0, title: 'Sheet1' } }]).map((s, idx) => ({
         properties: {
           sheetId: s.properties?.sheetId ?? idx,
           title: s.properties?.title || `Sheet${idx + 1}`
@@ -453,10 +460,11 @@ test('7. Google Sheets Creation & Generic Workspace Spreadsheet Creation', async
   assert.equal(data1.properties.title, 'Varun');
   assert.equal(data1.spreadsheet.properties.title, 'Varun');
 
-  // Verify resource sent to Google Sheets API
+  // Verify requestBody sent to Google Sheets API
   const lastParams1 = mockSheetsClient.lastCreateParams;
-  assert.equal(lastParams1.resource.properties.title, 'Varun');
-  assert.equal(lastParams1.resource.sheets, undefined, 'Must NOT send sheets array when sheetTitles is omitted');
+  assert.equal(lastParams1.resource, undefined, 'params.resource must be strictly undefined to prevent query string serialization');
+  assert.equal(lastParams1.requestBody.properties.title, 'Varun');
+  assert.equal(lastParams1.requestBody.sheets, undefined, 'Must NOT send sheets array when sheetTitles is omitted');
   assert.equal(lastParams1.fields, 'spreadsheetId,spreadsheetUrl,properties,sheets.properties');
 
   // Case 2: drive_sheet_create({ title: "Varun Test", sheetTitles: ["Sheet1"] })
@@ -472,10 +480,11 @@ test('7. Google Sheets Creation & Generic Workspace Spreadsheet Creation', async
   assert.equal(data2.properties.title, 'Varun Test');
   assert.equal(data2.sheets[0].properties.title, 'Sheet1');
 
-  // Verify resource sent to Google Sheets API
+  // Verify requestBody sent to Google Sheets API
   const lastParams2 = mockSheetsClient.lastCreateParams;
-  assert.equal(lastParams2.resource.properties.title, 'Varun Test');
-  assert.deepEqual(lastParams2.resource.sheets, [{ properties: { title: 'Sheet1' } }]);
+  assert.equal(lastParams2.resource, undefined, 'params.resource must be strictly undefined');
+  assert.equal(lastParams2.requestBody.properties.title, 'Varun Test');
+  assert.deepEqual(lastParams2.requestBody.sheets, [{ properties: { title: 'Sheet1' } }]);
 
   // Case 3: Generic spreadsheet creation via drive_create_file with application/vnd.google-apps.spreadsheet
   const res3 = await executeMcpTool('drive_create_file', {
@@ -534,6 +543,64 @@ test('8. Google API Error Diagnostics Formatting', async () => {
     assert.ok(errText.includes('POST https://sheets.googleapis.com/v4/spreadsheets?key=[REDACTED]&fields=spreadsheetId'), 'Includes sanitized request URL');
   } finally {
     mockSheetsClient.spreadsheets.create = originalCreate;
+  }
+});
+
+test('9. Regression Test: googleapis v146 HTTP Serialization puts spreadsheet in BODY and NOT query string', async () => {
+  const { google } = await import('googleapis');
+  let capturedRequest = null;
+
+  const realSheetsClient = google.sheets({
+    version: 'v4',
+    auth: {
+      request: async (opts) => {
+        capturedRequest = opts;
+        return {
+          data: {
+            spreadsheetId: 'real_sheet_123',
+            spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/real_sheet_123/edit',
+            properties: { title: opts.data?.properties?.title }
+          }
+        };
+      }
+    }
+  });
+
+  setGoogleClientOverrides({
+    getDriveClient: async () => mockDriveClient,
+    getSheetsClient: async () => realSheetsClient,
+    getSlidesClient: async () => mockSlidesClient
+  });
+
+  try {
+    const res = await executeMcpTool('drive_sheet_create', { title: 'Varun' }, mockUserSub);
+    assert.equal(res.isError, undefined);
+    assert.ok(capturedRequest, 'HTTP request must be captured');
+
+    // 1. Verify HTTP Method is POST
+    assert.equal(capturedRequest.method, 'POST');
+
+    // 2. Verify URL is exact Google Sheets endpoint
+    assert.equal(capturedRequest.url, 'https://sheets.googleapis.com/v4/spreadsheets');
+
+    // 3. Verify query params contain ONLY fields and NEVER resource[...]
+    assert.deepEqual(capturedRequest.params, {
+      fields: 'spreadsheetId,spreadsheetUrl,properties,sheets.properties'
+    });
+    assert.equal(capturedRequest.params.resource, undefined, 'params.resource must NOT be in query string');
+
+    // 4. Verify spreadsheet properties exist strictly inside HTTP JSON request body
+    assert.deepEqual(capturedRequest.data, {
+      properties: {
+        title: 'Varun'
+      }
+    });
+  } finally {
+    setGoogleClientOverrides({
+      getDriveClient: async () => mockDriveClient,
+      getSheetsClient: async () => mockSheetsClient,
+      getSlidesClient: async () => mockSlidesClient
+    });
   }
 });
 

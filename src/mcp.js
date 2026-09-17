@@ -639,14 +639,14 @@ export const TOOLS = [
     }),
     handler: async (args, context) => {
       const sheets = await getSheetsClient(context.userSub);
-      const resource = {
+      const requestBody = {
         properties: {
           title: args.title
         }
       };
 
       if (args.sheetTitles && args.sheetTitles.length > 0) {
-        resource.sheets = args.sheetTitles.map(sheetTitle => ({
+        requestBody.sheets = args.sheetTitles.map(sheetTitle => ({
           properties: {
             title: sheetTitle
           }
@@ -654,8 +654,7 @@ export const TOOLS = [
       }
 
       const res = await sheets.spreadsheets.create({
-        resource,
-        requestBody: resource,
+        requestBody,
         fields: 'spreadsheetId,spreadsheetUrl,properties,sheets.properties'
       });
 
