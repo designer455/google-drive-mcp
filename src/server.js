@@ -15,6 +15,7 @@ import {
 } from './oauth.js';
 import {
   handleGoogleAuthInitiate,
+  handleGoogleLink,
   handleGoogleOAuthCallback,
   handleGoogleAuthStatus,
   handleGoogleAuthDisconnect
@@ -141,6 +142,7 @@ app.post('/token', rateLimiter, handlePostToken);
 // Google Multi-User OAuth Endpoints
 // -------------------------------------------------------------
 app.get('/auth/google', rateLimiter, handleGoogleAuthInitiate);
+app.get('/auth/google/link', rateLimiter, handleGoogleLink);
 app.get('/oauth2callback', rateLimiter, handleGoogleOAuthCallback);
 app.get('/auth/google/status', requireMcpAuth, handleGoogleAuthStatus);
 app.post('/auth/google/disconnect', requireMcpAuth, handleGoogleAuthDisconnect);

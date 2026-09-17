@@ -9,13 +9,35 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { auditLog } from './audit.js';
 
-// Resolve DATA_DIR
+// Resolve DATA_DIR safely with local fallback if configured path is inaccessible
 const DEFAULT_HOSTINGER_DATA_DIR = '/home/u142843264/.google-drive-mcp-v2';
-export const DATA_DIR = process.env.DATA_DIR || 
-  (process.env.NODE_ENV === 'production' ? DEFAULT_HOSTINGER_DATA_DIR : path.resolve(process.cwd(), 'data'));
+
+function resolveDataDir() {
+  const configured = process.env.DATA_DIR || 
+    (process.env.NODE_ENV === 'production' ? DEFAULT_HOSTINGER_DATA_DIR : path.resolve(process.cwd(), 'data'));
+
+  try {
+    if (!fs.existsSync(configured)) {
+      fs.mkdirSync(configured, { recursive: true, mode: 0o700 });
+    }
+    return configured;
+  } catch {
+    // If the path cannot be created (e.g. hostinger path configured in .env when running locally), fallback to local ./data
+    const localData = path.resolve(process.cwd(), 'data');
+    if (!fs.existsSync(localData)) {
+      try {
+        fs.mkdirSync(localData, { recursive: true, mode: 0o700 });
+      } catch {}
+    }
+    return localData;
+  }
+}
+
+export const DATA_DIR = resolveDataDir();
 
 const USERS_FILE = path.join(DATA_DIR, 'google-users.json');
 const OAUTH_STATES_FILE = path.join(DATA_DIR, 'oauth-states.json');
+const GOOGLE_LINK_TOKENS_FILE = path.join(DATA_DIR, 'google-link-tokens.json');
 const MCP_AUTH_FILE = path.join(DATA_DIR, 'mcp-auth.json');
 
 // Mutex queue to prevent race conditions in concurrent file writes
@@ -246,11 +268,106 @@ export async function consumeGoogleOAuthState(state) {
       throw err;
     }
 
+
     // Mark as used and delete immediately to prevent reuse
     record.used = true;
     const userSub = record.userSub;
     delete data.states[state];
     safeWriteJsonSync(OAUTH_STATES_FILE, data);
+
+    return userSub;
+  });
+}
+
+// -------------------------------------------------------------
+// Google One-Time Link Token Store
+// -------------------------------------------------------------
+
+/**
+ * Save a one-time Google link token securely (hashed).
+ *
+ * @param {string} linkToken - Cryptographically random token (e.g. glink_...)
+ * @param {string} userSub - Opaque MCP user ID
+ * @param {number} [expiresInMs] - Lifetime in milliseconds
+ */
+export async function saveGoogleLinkToken(linkToken, userSub, expiresInMs) {
+  if (!linkToken || !userSub) {
+    throw new Error('linkToken and userSub are required');
+  }
+  const expirySecs = parseInt(process.env.OAUTH_GOOGLE_LINK_EXPIRY_SECONDS, 10) || 600;
+  const durationMs = expiresInMs !== undefined ? expiresInMs : expirySecs * 1000;
+
+  return fileMutex.runExclusive(async () => {
+    const data = safeReadJsonSync(GOOGLE_LINK_TOKENS_FILE, { tokens: {} });
+    const now = Date.now();
+    const expiresAt = now + durationMs;
+
+    data.tokens = data.tokens || {};
+    // Prune expired or used tokens
+    for (const [hash, record] of Object.entries(data.tokens)) {
+      if (record.expiresAt < now || record.used) {
+        delete data.tokens[hash];
+      }
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(linkToken).digest('hex');
+    data.tokens[tokenHash] = {
+      tokenHash,
+      userSub,
+      createdAt: new Date(now).toISOString(),
+      expiresAt,
+      used: false
+    };
+
+    safeWriteJsonSync(GOOGLE_LINK_TOKENS_FILE, data);
+  });
+}
+
+/**
+ * Atomically consume and validate a one-time Google link token.
+ * Returns the bound userSub if valid, or throws error.
+ *
+ * @param {string} linkToken
+ * @returns {Promise<string>} Bound userSub
+ */
+export async function consumeGoogleLinkToken(linkToken) {
+  if (!linkToken) {
+    const err = new Error('Missing Google link token');
+    err.code = 'GOOGLE_LINK_INVALID';
+    throw err;
+  }
+
+  return fileMutex.runExclusive(async () => {
+    const data = safeReadJsonSync(GOOGLE_LINK_TOKENS_FILE, { tokens: {} });
+    const tokenHash = crypto.createHash('sha256').update(linkToken).digest('hex');
+    const record = data.tokens?.[tokenHash];
+
+    if (!record) {
+      const err = new Error('Invalid or unknown Google link token');
+      err.code = 'GOOGLE_LINK_INVALID';
+      throw err;
+    }
+
+    if (record.used) {
+      const err = new Error('Google link token has already been consumed (replay detected)');
+      err.code = 'GOOGLE_LINK_REPLAY';
+      throw err;
+    }
+
+    const now = Date.now();
+    if (record.expiresAt < now) {
+      delete data.tokens[tokenHash];
+      safeWriteJsonSync(GOOGLE_LINK_TOKENS_FILE, data);
+      const err = new Error('Google link token has expired');
+      err.code = 'GOOGLE_LINK_EXPIRED';
+      throw err;
+    }
+
+    // Mark as used and delete immediately to prevent reuse
+    record.used = true;
+    const userSub = record.userSub;
+    delete data.tokens[tokenHash];
+    safeWriteJsonSync(GOOGLE_LINK_TOKENS_FILE, data);
 
     return userSub;
   });

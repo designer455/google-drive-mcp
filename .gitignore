@@ -10,6 +10,7 @@ credentials.json
 token.json
 google-token.json
 google-users.json
+google-link-tokens.json
 mcp-auth.json
 
 # Persistent data directory

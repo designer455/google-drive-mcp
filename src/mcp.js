@@ -13,6 +13,7 @@ import {
   getSlidesClient
 } from './google.js';
 import { getPublicOrigin } from './oauth.js';
+import { createGoogleLinkToken } from './google-oauth.js';
 import { auditLog } from './audit.js';
 
 // Maximum upload/read content size (10 MB)
@@ -63,13 +64,21 @@ function formatSuccess(data) {
 /**
  * Format standard MCP tool error response.
  */
-function formatError(err, userSub) {
+async function formatError(err, userSub) {
   let message = err.message || 'Unknown error occurred';
   let errorCode = err.code || 'INTERNAL_ERROR';
 
   if (errorCode === 'GOOGLE_NOT_CONNECTED') {
-    const connectUrl = `${getPublicOrigin()}/auth/google`;
-    message = `Google Drive is not connected for your account. Please connect your Google account by opening: ${connectUrl}`;
+    if (userSub && userSub !== 'anonymous') {
+      try {
+        const linkUrl = await createGoogleLinkToken(userSub);
+        message = `Google Drive is not connected for your account.\nOpen this one-time connection link to connect your Google account:\n${linkUrl}\n\nThis link connects your personal Google account to your ChatGPT MCP session. This link expires in 10 minutes and can be used once.`;
+      } catch (tokenErr) {
+        message = `Google Drive is not connected for your account. Failed to generate secure connection link: ${tokenErr.message}`;
+      }
+    } else {
+      message = 'Google Drive is not connected and valid MCP user authentication context is missing.';
+    }
   }
 
   auditLog({
@@ -988,14 +997,14 @@ export async function executeMcpTool(toolName, args, userSub) {
   if (!userSub) {
     const err = new Error('Authentication required: missing user identity.');
     err.code = 'UNAUTHORIZED';
-    return formatError(err, 'anonymous');
+    return await formatError(err, 'anonymous');
   }
 
   const tool = TOOLS.find(t => t.name === toolName);
   if (!tool) {
     const err = new Error(`Tool "${toolName}" not found.`);
     err.code = 'TOOL_NOT_FOUND';
-    return formatError(err, userSub);
+    return await formatError(err, userSub);
   }
 
   // Strictly strip any client-supplied userId to prevent injection
@@ -1008,7 +1017,7 @@ export async function executeMcpTool(toolName, args, userSub) {
     const validatedArgs = tool.schema.parse(safeArgs);
     return await tool.handler(validatedArgs, { userSub });
   } catch (err) {
-    return formatError(err, userSub);
+    return await formatError(err, userSub);
   }
 }
 

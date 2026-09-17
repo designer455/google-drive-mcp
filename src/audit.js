@@ -14,7 +14,12 @@ const SENSITIVE_KEYS = new Set([
   'code',
   'token',
   'mcp_access_token',
-  'credentials'
+  'credentials',
+  'state',
+  'link_token',
+  'linktoken',
+  'tokenhash',
+  'token_hash'
 ]);
 
 /**
@@ -22,6 +27,9 @@ const SENSITIVE_KEYS = new Set([
  */
 export function sanitize(data) {
   if (!data || typeof data !== 'object') {
+    if (typeof data === 'string' && data.startsWith('glink_')) {
+      return '[REDACTED]';
+    }
     return data;
   }
 
@@ -32,7 +40,14 @@ export function sanitize(data) {
   const sanitized = {};
   for (const [key, value] of Object.entries(data)) {
     const lowerKey = key.toLowerCase();
-    if (SENSITIVE_KEYS.has(lowerKey) || lowerKey.includes('secret') || lowerKey.includes('token')) {
+    if (
+      SENSITIVE_KEYS.has(lowerKey) ||
+      lowerKey.includes('secret') ||
+      lowerKey.includes('token') ||
+      lowerKey.includes('state')
+    ) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof value === 'string' && (value.startsWith('glink_') || value.startsWith('ya29.'))) {
       sanitized[key] = '[REDACTED]';
     } else if (typeof value === 'object' && value !== null) {
       sanitized[key] = sanitize(value);
