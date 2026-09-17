@@ -36,15 +36,15 @@ https://www.digitonsdevelopment.com/
 
 ### Support URL
 
-TODO: add a public support page on the publisher domain.
+https://mcp-v2.digitonsdevelopment.com/support
 
 ### Privacy policy URL
 
-TODO: publish a public privacy policy that accurately describes Google Drive data handling, token storage, retention, logging, disconnect/revocation, and third-party processing.
+https://mcp-v2.digitonsdevelopment.com/privacy
 
 ### Terms URL
 
-TODO: publish public terms on the publisher domain.
+https://mcp-v2.digitonsdevelopment.com/terms
 
 ## Developer identity
 

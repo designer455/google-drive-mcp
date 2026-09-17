@@ -20,6 +20,12 @@ import {
   handleGoogleAuthStatus,
   handleGoogleAuthDisconnect
 } from './google-oauth.js';
+import {
+  handleRootPage,
+  handlePrivacyPage,
+  handleTermsPage,
+  handleSupportPage
+} from './pages.js';
 import { listMcpTools, executeMcpTool } from './mcp.js';
 import { auditLog } from './audit.js';
 
@@ -110,6 +116,14 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// -------------------------------------------------------------
+// Public Informational & Legal Pages
+// -------------------------------------------------------------
+app.get('/', rateLimiter, handleRootPage);
+app.get('/privacy', rateLimiter, handlePrivacyPage);
+app.get('/terms', rateLimiter, handleTermsPage);
+app.get('/support', rateLimiter, handleSupportPage);
 
 // -------------------------------------------------------------
 // ChatGPT OAuth Endpoints

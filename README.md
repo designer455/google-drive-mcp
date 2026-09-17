@@ -223,11 +223,23 @@ OAUTH_GOOGLE_LINK_EXPIRY_SECONDS=600
 
 # OpenAI Domain Verification Challenge
 OPENAI_APPS_CHALLENGE_TOKEN=your-openai-apps-challenge-token
+
+# Publisher & Support Information
+SUPPORT_EMAIL=support@digitonsdevelopment.com
+COMPANY_NAME=Digitons Development
+COMPANY_WEBSITE=https://www.digitonsdevelopment.com
 ```
 
 ---
 
 ## 7. OpenAI Domain Verification & Public Submission
+
+### Public Legal & Support URLs
+The server provides public, unauthenticated informational and legal pages required for OpenAI Plugin/App Directory submission:
+- **Support URL**: `https://mcp-v2.digitonsdevelopment.com/support`
+- **Privacy Policy URL**: `https://mcp-v2.digitonsdevelopment.com/privacy`
+- **Terms of Service URL**: `https://mcp-v2.digitonsdevelopment.com/terms`
+- **Overview / Landing Page**: `https://mcp-v2.digitonsdevelopment.com/`
 
 ### Domain Verification Challenge
 When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requires domain ownership verification:
@@ -238,6 +250,9 @@ When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requi
 - Fallback: Returns 404 Not Found if `OPENAI_APPS_CHALLENGE_TOKEN` is unset or empty.
 
 ### OpenAI Public Submission Checklist
+- [x] **Public Support Page**: `GET /support` provides user setup guides, troubleshooting, disconnect instructions, and support contacts.
+- [x] **Privacy Policy**: `GET /privacy` accurately details Google Drive data access, restricted file token storage (`0600`/`0700`), single-use hashed link tokens, and token-redacted audit logs.
+- [x] **Terms of Service**: `GET /terms` establishes acceptable use, file size boundaries (10MB), non-destructive trash safeguards, and liability limitations.
 - [x] **Tool Annotations**: All 23 tools advertise `readOnlyHint`, `openWorldHint`, and `destructiveHint` both at top-level and inside `annotations`.
 - [x] **Domain Challenge Endpoint**: `GET /.well-known/openai-apps-challenge` is live and returns plain text.
 - [x] **OAuth Discovery Metadata**: `GET /.well-known/oauth-authorization-server` advertises `"code_challenge_methods_supported": ["S256"]` with `Cache-Control: no-store`.
@@ -290,7 +305,8 @@ npm run check
 npm test
 ```
 
-The test suite runs 60 comprehensive automated tests across 6 suites:
+The test suite runs 67 comprehensive automated tests across 7 suites:
+- `test/pages-test.js`: Public informational and legal pages (`/privacy`, `/terms`, `/support`, `/`), unauthenticated access, content completeness, link integrity, and zero secret/token leakage.
 - `test/google-link-test.js`: One-time Google link token generation, single-use atomic consumption, expiration, replay rejection, User A vs User B isolation, direct Bearer requirement, error messaging, audit sanitization, and full end-to-end connect journey.
 - `test/oauth-test.js`: RFC discovery, PKCE S256 verification, token rotation, code replay, OpenID alias, and expiry checks.
 - `test/multi-user-test.js`: User A vs User B credential isolation, disconnect isolation, per-user token refresh.

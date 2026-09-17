@@ -9,7 +9,7 @@
     "dev": "node --watch src/server.js",
     "stdio": "node src/stdio.js",
     "test": "node --test test/*.js",
-    "check": "node --check src/server.js && node --check src/mcp.js && node --check src/google.js && node --check src/oauth.js && node --check src/google-oauth.js && node --check src/user-store.js && node --check src/audit.js && node --check src/stdio.js"
+    "check": "node --check src/server.js && node --check src/mcp.js && node --check src/google.js && node --check src/oauth.js && node --check src/google-oauth.js && node --check src/user-store.js && node --check src/audit.js && node --check src/stdio.js && node --check src/pages.js"
   },
   "keywords": [
     "mcp",
