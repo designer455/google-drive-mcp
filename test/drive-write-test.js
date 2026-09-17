@@ -112,6 +112,23 @@ const mockDriveClient = {
       return { data: Readable.from([`Mock exported document content (${params.mimeType})`]) };
     },
     create: async (params) => {
+      mockDriveClient.lastCreateParams = params;
+      // Google Drive API rejects media uploads for native Google Workspace documents
+      if (params.media && params.requestBody?.mimeType?.startsWith('application/vnd.google-apps.')) {
+        const err = new Error('Uploading content is not supported for Google Workspace documents.');
+        err.code = 400;
+        err.response = {
+          status: 400,
+          data: {
+            error: {
+              code: 400,
+              message: 'Uploading content is not supported for Google Workspace documents.',
+              status: 'INVALID_ARGUMENT'
+            }
+          }
+        };
+        throw err;
+      }
       const newFile = {
         id: `file_${Date.now()}`,
         name: params.requestBody.name,
@@ -179,12 +196,44 @@ const mockDriveClient = {
 const mockSheetsClient = {
   spreadsheets: {
     create: async (params) => {
+      mockSheetsClient.lastCreateParams = params;
+      const resource = params.resource || params.requestBody;
+      // Fail if empty sheets array is sent or invalid field mask syntax
+      if (resource?.sheets && resource.sheets.length === 0) {
+        const err = new Error('Invalid empty sheets array');
+        err.code = 400;
+        err.response = { status: 400, data: { error: { code: 400, message: 'Invalid empty sheets array', status: 'INVALID_ARGUMENT' } } };
+        throw err;
+      }
+      if (params.fields && params.fields.includes(', ')) {
+        const err = new Error('Field mask must not contain whitespace after commas');
+        err.code = 400;
+        err.response = { status: 400, data: { error: { code: 400, message: 'Field mask must not contain whitespace', status: 'INVALID_ARGUMENT' } } };
+        throw err;
+      }
+
       const spreadsheetId = `sheet_${Date.now()}`;
+      const title = resource?.properties?.title || 'Untitled';
+      const initialSheets = (resource?.sheets || [{ properties: { sheetId: 0, title: 'Sheet1' } }]).map((s, idx) => ({
+        properties: {
+          sheetId: s.properties?.sheetId ?? idx,
+          title: s.properties?.title || `Sheet${idx + 1}`
+        }
+      }));
+
       mockDriveState.sheets[spreadsheetId] = {
-        title: params.requestBody.properties.title,
+        title,
         values: []
       };
-      return { data: { spreadsheetId, properties: { title: params.requestBody.properties.title } } };
+
+      return {
+        data: {
+          spreadsheetId,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+          properties: { title },
+          sheets: initialSheets
+        }
+      };
     },
     values: {
       get: async (params) => {
@@ -392,3 +441,99 @@ test('6. Permission Tools Execution & Security Policies', async () => {
   const removeData = JSON.parse(removePerm.content[0].text);
   assert.equal(removeData.success, true);
 });
+
+test('7. Google Sheets Creation & Generic Workspace Spreadsheet Creation', async () => {
+  // Case 1: drive_sheet_create({ title: "Varun" })
+  const res1 = await executeMcpTool('drive_sheet_create', { title: 'Varun' }, mockUserSub);
+  assert.equal(res1.isError, undefined);
+  const data1 = JSON.parse(res1.content[0].text);
+  assert.equal(data1.success, true);
+  assert.ok(data1.spreadsheetId);
+  assert.ok(data1.spreadsheetUrl);
+  assert.equal(data1.properties.title, 'Varun');
+  assert.equal(data1.spreadsheet.properties.title, 'Varun');
+
+  // Verify resource sent to Google Sheets API
+  const lastParams1 = mockSheetsClient.lastCreateParams;
+  assert.equal(lastParams1.resource.properties.title, 'Varun');
+  assert.equal(lastParams1.resource.sheets, undefined, 'Must NOT send sheets array when sheetTitles is omitted');
+  assert.equal(lastParams1.fields, 'spreadsheetId,spreadsheetUrl,properties,sheets.properties');
+
+  // Case 2: drive_sheet_create({ title: "Varun Test", sheetTitles: ["Sheet1"] })
+  const res2 = await executeMcpTool('drive_sheet_create', {
+    title: 'Varun Test',
+    sheetTitles: ['Sheet1']
+  }, mockUserSub);
+  assert.equal(res2.isError, undefined);
+  const data2 = JSON.parse(res2.content[0].text);
+  assert.equal(data2.success, true);
+  assert.ok(data2.spreadsheetId);
+  assert.ok(data2.spreadsheetUrl);
+  assert.equal(data2.properties.title, 'Varun Test');
+  assert.equal(data2.sheets[0].properties.title, 'Sheet1');
+
+  // Verify resource sent to Google Sheets API
+  const lastParams2 = mockSheetsClient.lastCreateParams;
+  assert.equal(lastParams2.resource.properties.title, 'Varun Test');
+  assert.deepEqual(lastParams2.resource.sheets, [{ properties: { title: 'Sheet1' } }]);
+
+  // Case 3: Generic spreadsheet creation via drive_create_file with application/vnd.google-apps.spreadsheet
+  const res3 = await executeMcpTool('drive_create_file', {
+    name: 'Varun Generic Sheet',
+    mimeType: 'application/vnd.google-apps.spreadsheet'
+  }, mockUserSub);
+  assert.equal(res3.isError, undefined);
+  const data3 = JSON.parse(res3.content[0].text);
+  assert.equal(data3.success, true);
+  assert.equal(data3.file.name, 'Varun Generic Sheet');
+  assert.equal(data3.file.mimeType, 'application/vnd.google-apps.spreadsheet');
+
+  // Verify media payload was NOT attached for Google Workspace MIME type
+  const lastDriveParams = mockDriveClient.lastCreateParams;
+  assert.equal(lastDriveParams.media, undefined, 'media payload must NOT be passed for Google Workspace document types');
+  assert.equal(lastDriveParams.fields, 'id,name,mimeType,size,createdTime,webViewLink');
+});
+
+test('8. Google API Error Diagnostics Formatting', async () => {
+  // Test that rich error diagnostics from Google API response are preserved
+  const originalCreate = mockSheetsClient.spreadsheets.create;
+  mockSheetsClient.spreadsheets.create = async () => {
+    const error = new Error('Request contains an invalid argument.');
+    error.response = {
+      status: 400,
+      data: {
+        error: {
+          code: 400,
+          message: 'Request contains an invalid argument.',
+          status: 'INVALID_ARGUMENT',
+          errors: [
+            {
+              message: 'Invalid field selection',
+              domain: 'global',
+              reason: 'badRequest'
+            }
+          ]
+        }
+      }
+    };
+    error.config = {
+      method: 'post',
+      url: 'https://sheets.googleapis.com/v4/spreadsheets?key=secret123&fields=spreadsheetId'
+    };
+    throw error;
+  };
+
+  try {
+    const res = await executeMcpTool('drive_sheet_create', { title: 'Failing Sheet' }, mockUserSub);
+    assert.equal(res.isError, true);
+    const errText = res.content[0].text;
+    assert.ok(errText.includes('HTTP Status: 400'), 'Includes HTTP status');
+    assert.ok(errText.includes('Status: INVALID_ARGUMENT'), 'Includes Google status');
+    assert.ok(errText.includes('Message: Request contains an invalid argument.'), 'Includes Google message');
+    assert.ok(errText.includes('[global/badRequest]: Invalid field selection'), 'Includes Google error reason');
+    assert.ok(errText.includes('POST https://sheets.googleapis.com/v4/spreadsheets?key=[REDACTED]&fields=spreadsheetId'), 'Includes sanitized request URL');
+  } finally {
+    mockSheetsClient.spreadsheets.create = originalCreate;
+  }
+});
+

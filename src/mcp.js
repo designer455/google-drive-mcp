@@ -68,6 +68,47 @@ async function formatError(err, userSub) {
   let message = err.message || 'Unknown error occurred';
   let errorCode = err.code || 'INTERNAL_ERROR';
 
+  // Extract detailed Google API error diagnostics if available
+  const googleError = err.response?.data?.error;
+  if (googleError) {
+    errorCode = googleError.status || googleError.code || err.response?.status || errorCode;
+    const detailsList = [];
+
+    if (googleError.message) {
+      detailsList.push(`Message: ${googleError.message}`);
+    }
+    if (googleError.status) {
+      detailsList.push(`Status: ${googleError.status}`);
+    }
+    if (err.response?.status) {
+      detailsList.push(`HTTP Status: ${err.response.status}`);
+    }
+    if (Array.isArray(googleError.errors) && googleError.errors.length > 0) {
+      const reasons = googleError.errors
+        .map(e => `[${e.domain || 'global'}/${e.reason || 'unknown'}]: ${e.message}`)
+        .join('; ');
+      detailsList.push(`Reasons: ${reasons}`);
+    }
+    if (googleError.details && Array.isArray(googleError.details) && googleError.details.length > 0) {
+      detailsList.push(`Details: ${JSON.stringify(googleError.details)}`);
+    }
+    if (err.config?.url) {
+      const sanitizedUrl = err.config.url.replace(/([?&](?:access_token|key|secret)=)[^&]+/gi, '$1[REDACTED]');
+      detailsList.push(`Request: ${err.config.method ? err.config.method.toUpperCase() + ' ' : ''}${sanitizedUrl}`);
+    }
+
+    if (detailsList.length > 0) {
+      message = detailsList.join('\n');
+    }
+  } else if (Array.isArray(err.errors) && err.errors.length > 0) {
+    const reasons = err.errors
+      .map(e => `[${e.domain || 'global'}/${e.reason || 'unknown'}]: ${e.message}`)
+      .join('; ');
+    message = `${message}\nReasons: ${reasons}`;
+  } else if (err.response?.data && typeof err.response.data === 'string') {
+    message = `${message} - ${err.response.data}`;
+  }
+
   if (errorCode === 'GOOGLE_NOT_CONNECTED') {
     if (userSub && userSub !== 'anonymous') {
       try {
@@ -319,29 +360,35 @@ export const TOOLS = [
     destructiveHint: false,
     schema: z.object({
       name: z.string().min(1).describe('Name of the new file'),
-      mimeType: z.string().optional().default('text/plain').describe('MIME type (e.g. text/plain, application/json, text/csv)'),
-      content: z.string().optional().default('').describe('Initial text content of the file'),
+      mimeType: z.string().optional().default('text/plain').describe('MIME type (e.g. text/plain, application/json, text/csv, application/vnd.google-apps.spreadsheet)'),
+      content: z.string().optional().default('').describe('Initial text content of the file (ignored for Google Workspace document types)'),
       parentFolderId: z.string().optional().describe('Optional parent folder ID')
     }),
     handler: async (args, context) => {
       const drive = await getDriveClient(context.userSub);
+      const isGoogleAppsType = typeof args.mimeType === 'string' && args.mimeType.startsWith('application/vnd.google-apps.');
+
       const fileMetadata = {
         name: args.name,
         mimeType: args.mimeType,
         ...(args.parentFolderId ? { parents: [args.parentFolderId] } : {})
       };
 
-      const media = {
-        mimeType: args.mimeType,
-        body: Readable.from([args.content || ''])
+      const createParams = {
+        requestBody: fileMetadata,
+        fields: 'id,name,mimeType,size,createdTime,webViewLink',
+        supportsAllDrives: true
       };
 
-      const res = await drive.files.create({
-        requestBody: fileMetadata,
-        media,
-        fields: 'id, name, mimeType, size, createdTime, webViewLink',
-        supportsAllDrives: true
-      });
+      // Only attach media payload for non-Google Workspace files; Google Workspace docs must NOT have media uploaded directly
+      if (!isGoogleAppsType) {
+        createParams.media = {
+          mimeType: args.mimeType,
+          body: Readable.from([args.content || ''])
+        };
+      }
+
+      const res = await drive.files.create(createParams);
 
       auditLog({
         userSub: context.userSub,
@@ -588,33 +635,51 @@ export const TOOLS = [
     destructiveHint: false,
     schema: z.object({
       title: z.string().min(1).describe('Title of the spreadsheet'),
-      sheetTitles: z.array(z.string()).optional().describe('Optional list of initial sheet tab titles')
+      sheetTitles: z.array(z.string().min(1)).optional().describe('Optional list of initial sheet tab titles')
     }),
     handler: async (args, context) => {
       const sheets = await getSheetsClient(context.userSub);
       const resource = {
-        properties: { title: args.title },
-        sheets: args.sheetTitles?.map(title => ({
-          properties: { title }
-        }))
+        properties: {
+          title: args.title
+        }
       };
 
+      if (args.sheetTitles && args.sheetTitles.length > 0) {
+        resource.sheets = args.sheetTitles.map(sheetTitle => ({
+          properties: {
+            title: sheetTitle
+          }
+        }));
+      }
+
       const res = await sheets.spreadsheets.create({
+        resource,
         requestBody: resource,
-        fields: 'spreadsheetId, properties/title, sheets/properties(sheetId, title)'
+        fields: 'spreadsheetId,spreadsheetUrl,properties,sheets.properties'
       });
+
+      const data = res.data;
+      const spreadsheetUrl = data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`;
 
       auditLog({
         userSub: context.userSub,
         action: 'sheets.create',
-        resourceId: res.data.spreadsheetId,
+        resourceId: data.spreadsheetId,
         resourceType: 'spreadsheet',
         status: 'success'
       });
 
       return formatSuccess({
         success: true,
-        spreadsheet: res.data
+        spreadsheetId: data.spreadsheetId,
+        spreadsheetUrl,
+        properties: data.properties,
+        sheets: data.sheets,
+        spreadsheet: {
+          ...data,
+          spreadsheetUrl
+        }
       });
     }
   },
