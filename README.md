@@ -79,6 +79,12 @@ User A (ChatGPT)                   User B (ChatGPT)
 - **`drive_update_permission`**: Update permission role. *Ownership transfer is strictly blocked.*
 - **`drive_remove_permission`**: Remove a sharing permission from a file.
 
+### Tool Annotation Model (OpenAI App Directory Compliance)
+Every tool explicitly advertises safety hints both as top-level properties and in the `annotations` object:
+- **`readOnlyHint`** (`boolean`): Indicates whether the tool only reads data without modifying server or external state (`true` for search, read, metadata, list tools).
+- **`openWorldHint`** (`boolean`): Indicates whether the tool interacts with the open web/external network arbitrarily (`false` for all Drive tools).
+- **`destructiveHint`** (`boolean`): Indicates whether the tool performs destructive, overwriting, or trashing operations (`true` for `drive_update_file`, `drive_trash_file`, `drive_sheet_update_range`, `drive_slides_update`, `drive_update_permission`, `drive_remove_permission`).
+
 ---
 
 ## 3. OAuth Models
@@ -192,11 +198,36 @@ AUTH_CODE_EXPIRY_SECONDS=300
 ACCESS_TOKEN_EXPIRY_SECONDS=3600
 REFRESH_TOKEN_EXPIRY_SECONDS=2592000
 OAUTH_STATE_EXPIRY_SECONDS=600
+
+# OpenAI Domain Verification Challenge
+OPENAI_APPS_CHALLENGE_TOKEN=your-openai-apps-challenge-token
 ```
 
 ---
 
-## 7. Hostinger Deployment Guide
+## 7. OpenAI Domain Verification & Public Submission
+
+### Domain Verification Challenge
+When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requires domain ownership verification:
+- Endpoint: `GET /.well-known/openai-apps-challenge`
+- Response: Pure plain text (`text/plain; charset=utf-8`) containing only the token.
+- Configuration: Set `OPENAI_APPS_CHALLENGE_TOKEN` in `.env`.
+- Caching: Responses include `Cache-Control: no-store, no-cache, must-revalidate` to prevent CDN caching issues.
+- Fallback: Returns 404 Not Found if `OPENAI_APPS_CHALLENGE_TOKEN` is unset or empty.
+
+### OpenAI Public Submission Checklist
+- [x] **Tool Annotations**: All 23 tools advertise `readOnlyHint`, `openWorldHint`, and `destructiveHint` both at top-level and inside `annotations`.
+- [x] **Domain Challenge Endpoint**: `GET /.well-known/openai-apps-challenge` is live and returns plain text.
+- [x] **OAuth Discovery Metadata**: `GET /.well-known/oauth-authorization-server` advertises `"code_challenge_methods_supported": ["S256"]` with `Cache-Control: no-store`.
+- [x] **OpenID Configuration**: `GET /.well-known/openid-configuration` is supported as an alias for OIDC discovery clients.
+- [x] **Strict Host Validation**: Validates `ALLOWED_HOST` (`mcp-v2.digitonsdevelopment.com`) and rejects unexpected hosts.
+- [x] **Multi-User Isolation**: Every user connects their own Google account. No global or shared tokens exist.
+- [x] **Destructive Action Safeguards**: Overwrite tools have `destructiveHint: true`. Ownership transfer is strictly blocked.
+- [x] **Zero Stack Trace Leaks**: Production errors return safe, predictable error codes without stack traces.
+
+---
+
+## 8. Hostinger Deployment Guide
 
 1. **Domain Configuration**:
    Configure DNS for `mcp-v2.digitonsdevelopment.com` pointing to your Hostinger server IP. Ensure SSL is activated.
@@ -220,7 +251,7 @@ OAUTH_STATE_EXPIRY_SECONDS=600
 
 ---
 
-## 8. Local Setup & Testing
+## 9. Local Setup & Testing
 
 ### Install Dependencies
 ```bash
@@ -237,15 +268,16 @@ npm run check
 npm test
 ```
 
-The test suite runs 35 comprehensive automated tests across 4 suites:
-- `test/oauth-test.js`: RFC discovery, PKCE S256 verification, token rotation, code replay and expiry checks.
+The test suite runs 42 comprehensive automated tests across 5 suites:
+- `test/oauth-test.js`: RFC discovery, PKCE S256 verification, token rotation, code replay, OpenID alias, and expiry checks.
 - `test/multi-user-test.js`: User A vs User B credential isolation, disconnect isolation, per-user token refresh.
 - `test/drive-write-test.js`: All 23 tools (Read, Write, Sheets, Slides, Permissions).
 - `test/security-test.js`: State replay/expiry/CSRF, IDOR prevention, ownership transfer blocking, host validation, log sanitization, and `0600` file permissions.
+- `test/annotations-test.js`: All 23 tool hints (`readOnlyHint`, `openWorldHint`, `destructiveHint`) and OpenAI domain verification challenge tests.
 
 ---
 
-## 9. Limitations & Best Practices
+## 10. Limitations & Best Practices
 
 - **File Size**: Upload and text export are capped at 10MB to prevent memory exhaustion and excessive latency.
 - **Trash vs Permanent Delete**: Permanent file deletion is disabled by design. Files are moved to Google Drive Trash (`trashed: true`) to safeguard against accidental data destruction.

@@ -99,6 +99,9 @@ export const TOOLS = [
   {
     name: 'drive_search',
     description: 'Search for files in Google Drive matching a query string.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       query: z.string().describe("Drive search query (e.g., \"name contains 'quarterly' and trashed = false\")"),
       pageSize: z.number().int().min(1).max(100).optional().default(20),
@@ -133,6 +136,9 @@ export const TOOLS = [
   {
     name: 'drive_list_folder',
     description: 'List items inside a specific Google Drive folder.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       folderId: z.string().optional().default('root').describe("Folder ID (use 'root' for My Drive root)"),
       pageSize: z.number().int().min(1).max(100).optional().default(50),
@@ -169,6 +175,9 @@ export const TOOLS = [
   {
     name: 'drive_get_metadata',
     description: 'Get detailed metadata for a file or folder in Google Drive.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder'),
       fields: z.string().optional().default('id, name, mimeType, size, modifiedTime, createdTime, parents, trashed, shared, webViewLink')
@@ -194,6 +203,9 @@ export const TOOLS = [
   {
     name: 'drive_read_file',
     description: 'Read content of a file from Google Drive (exports Google Docs, Sheets, Slides or downloads text/content).',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file to read'),
       exportMimeType: z.string().optional().describe('Optional export MIME type for Google Docs/Sheets/Slides')
@@ -256,6 +268,9 @@ export const TOOLS = [
   {
     name: 'drive_search_and_read',
     description: 'Search for a file matching a query and immediately return the content of the first matching file.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       query: z.string().describe("Search query to locate the file (e.g., \"name contains 'budget'\")"),
       exportMimeType: z.string().optional()
@@ -290,6 +305,9 @@ export const TOOLS = [
   {
     name: 'drive_create_file',
     description: 'Create a new text or data file in Google Drive.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       name: z.string().min(1).describe('Name of the new file'),
       mimeType: z.string().optional().default('text/plain').describe('MIME type (e.g. text/plain, application/json, text/csv)'),
@@ -333,6 +351,9 @@ export const TOOLS = [
   {
     name: 'drive_create_folder',
     description: 'Create a new folder in Google Drive.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       name: z.string().min(1).describe('Folder name'),
       parentFolderId: z.string().optional().describe('Optional parent folder ID')
@@ -368,6 +389,9 @@ export const TOOLS = [
   {
     name: 'drive_update_file',
     description: 'Update/replace the content of an existing text or data file in Google Drive.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file to update'),
       content: z.string().describe('New content to replace the file with'),
@@ -404,6 +428,9 @@ export const TOOLS = [
   {
     name: 'drive_rename_file',
     description: 'Rename an existing file or folder in Google Drive.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder to rename'),
       newName: z.string().min(1).describe('The new name')
@@ -434,6 +461,9 @@ export const TOOLS = [
   {
     name: 'drive_move_file',
     description: 'Move a file or folder to a different parent folder.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file to move'),
       targetFolderId: z.string().min(1).describe('The ID of the destination folder')
@@ -472,6 +502,9 @@ export const TOOLS = [
   {
     name: 'drive_copy_file',
     description: 'Create a copy of an existing file in Google Drive.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file to copy'),
       newName: z.string().optional().describe('Name for the copy (optional)'),
@@ -508,6 +541,9 @@ export const TOOLS = [
   {
     name: 'drive_trash_file',
     description: 'Move a file or folder to the trash in Google Drive. Does NOT permanently delete.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder to trash')
     }),
@@ -538,6 +574,9 @@ export const TOOLS = [
   {
     name: 'drive_sheet_create',
     description: 'Create a new Google Spreadsheet.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       title: z.string().min(1).describe('Title of the spreadsheet'),
       sheetTitles: z.array(z.string()).optional().describe('Optional list of initial sheet tab titles')
@@ -573,6 +612,9 @@ export const TOOLS = [
   {
     name: 'drive_sheet_read_range',
     description: 'Read values from an A1 range in a Google Spreadsheet.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       spreadsheetId: z.string().min(1).describe('ID of the spreadsheet'),
       range: z.string().min(1).describe("A1 notation range (e.g. 'Sheet1!A1:D10' or 'A1:C')")
@@ -601,6 +643,9 @@ export const TOOLS = [
   {
     name: 'drive_sheet_update_range',
     description: 'Update values in an A1 range in a Google Spreadsheet.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
     schema: z.object({
       spreadsheetId: z.string().min(1).describe('ID of the spreadsheet'),
       range: z.string().min(1).describe("A1 notation range (e.g. 'Sheet1!A1:B2')"),
@@ -636,6 +681,9 @@ export const TOOLS = [
   {
     name: 'drive_sheet_append_rows',
     description: 'Append rows of values to a Google Spreadsheet table/sheet.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       spreadsheetId: z.string().min(1).describe('ID of the spreadsheet'),
       range: z.string().min(1).describe("A1 notation range or sheet name (e.g. 'Sheet1')"),
@@ -671,6 +719,9 @@ export const TOOLS = [
   {
     name: 'drive_slides_create',
     description: 'Create a new Google Slides presentation.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       title: z.string().min(1).describe('Title of the presentation')
     }),
@@ -698,6 +749,9 @@ export const TOOLS = [
   {
     name: 'drive_slides_read',
     description: 'Read slides structure and metadata of a Google Slides presentation.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       presentationId: z.string().min(1).describe('ID of the presentation')
     }),
@@ -725,6 +779,9 @@ export const TOOLS = [
   {
     name: 'drive_slides_update',
     description: 'Perform batch updates on a Google Slides presentation (e.g. createSlide, insertText).',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
     schema: z.object({
       presentationId: z.string().min(1).describe('ID of the presentation'),
       requests: z.array(z.record(z.any())).describe('Array of Slides API batchUpdate request objects')
@@ -756,6 +813,9 @@ export const TOOLS = [
   {
     name: 'drive_list_permissions',
     description: 'List sharing permissions for a file or folder.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder')
     }),
@@ -783,6 +843,9 @@ export const TOOLS = [
   {
     name: 'drive_add_permission',
     description: 'Share a file/folder with a user, group, or domain. Ownership transfer and anonymous write are strictly blocked.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder'),
       role: z.enum(['reader', 'commenter', 'writer']).describe("Role to grant: 'reader', 'commenter', or 'writer'"),
@@ -845,6 +908,9 @@ export const TOOLS = [
   {
     name: 'drive_update_permission',
     description: 'Update the role of an existing permission. Ownership transfer is strictly blocked.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder'),
       permissionId: z.string().min(1).describe('The ID of the permission to update'),
@@ -884,6 +950,9 @@ export const TOOLS = [
   {
     name: 'drive_remove_permission',
     description: 'Remove a sharing permission from a file or folder.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
     schema: z.object({
       fileId: z.string().min(1).describe('The ID of the file or folder'),
       permissionId: z.string().min(1).describe('The ID of the permission to remove')
@@ -952,7 +1021,15 @@ export function listMcpTools() {
     return {
       name: t.name,
       description: t.description,
-      inputSchema: zodToJsonSchema(t.schema)
+      inputSchema: zodToJsonSchema(t.schema),
+      readOnlyHint: t.readOnlyHint,
+      openWorldHint: t.openWorldHint,
+      destructiveHint: t.destructiveHint,
+      annotations: {
+        readOnlyHint: t.readOnlyHint,
+        openWorldHint: t.openWorldHint,
+        destructiveHint: t.destructiveHint
+      }
     };
   });
 }

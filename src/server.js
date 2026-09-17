@@ -116,6 +116,23 @@ app.get('/health', (req, res) => {
 app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
 app.get('/.well-known/openid-configuration', handleOAuthMetadata);
 app.get('/.well-known/oauth-protected-resource', handleProtectedResourceMetadata);
+app.get('/.well-known/openai-apps-challenge', (req, res) => {
+  const token = process.env.OPENAI_APPS_CHALLENGE_TOKEN;
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    return res.status(404).set({
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache'
+    }).send('OpenAI domain verification challenge not configured');
+  }
+
+  res.set({
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'Pragma': 'no-cache'
+  });
+  return res.send(token.trim());
+});
 app.get('/authorize', rateLimiter, handleGetAuthorize);
 app.post('/authorize', rateLimiter, handlePostAuthorize);
 app.post('/token', rateLimiter, handlePostToken);
