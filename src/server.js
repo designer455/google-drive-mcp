@@ -114,6 +114,7 @@ app.get('/health', (req, res) => {
 // ChatGPT OAuth Endpoints
 // -------------------------------------------------------------
 app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
+app.get('/.well-known/openid-configuration', handleOAuthMetadata);
 app.get('/.well-known/oauth-protected-resource', handleProtectedResourceMetadata);
 app.get('/authorize', rateLimiter, handleGetAuthorize);
 app.post('/authorize', rateLimiter, handlePostAuthorize);

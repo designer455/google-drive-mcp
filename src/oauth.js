@@ -113,6 +113,8 @@ export function validateClientCredentials(clientId, clientSecret) {
 export function handleOAuthMetadata(req, res) {
   const origin = getPublicOrigin();
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   res.json({
     issuer: origin,
     authorization_endpoint: `${origin}/authorize`,
@@ -135,6 +137,8 @@ export function handleOAuthMetadata(req, res) {
 export function handleProtectedResourceMetadata(req, res) {
   const origin = getPublicOrigin();
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   res.json({
     resource: getPublicUrl(),
     authorization_servers: [origin],

@@ -88,6 +88,8 @@ function makeRequest({ method = 'GET', path: reqPath, headers = {}, body = null 
 test('1. OAuth Discovery: GET /.well-known/oauth-authorization-server', async () => {
   const res = await makeRequest({ path: '/.well-known/oauth-authorization-server' });
   assert.equal(res.status, 200);
+  assert.equal(res.headers['cache-control'], 'no-store, no-cache, must-revalidate');
+  assert.equal(res.headers['pragma'], 'no-cache');
   assert.ok(res.json);
   assert.equal(res.json.issuer, 'https://mcp-v2.digitonsdevelopment.com');
   assert.equal(res.json.authorization_endpoint, 'https://mcp-v2.digitonsdevelopment.com/authorize');
@@ -95,11 +97,19 @@ test('1. OAuth Discovery: GET /.well-known/oauth-authorization-server', async ()
   assert.deepEqual(res.json.code_challenge_methods_supported, ['S256']);
   assert.ok(res.json.grant_types_supported.includes('authorization_code'));
   assert.ok(res.json.grant_types_supported.includes('refresh_token'));
+
+  // OpenID configuration alias
+  const oidcRes = await makeRequest({ path: '/.well-known/openid-configuration' });
+  assert.equal(oidcRes.status, 200);
+  assert.equal(oidcRes.headers['cache-control'], 'no-store, no-cache, must-revalidate');
+  assert.deepEqual(oidcRes.json.code_challenge_methods_supported, ['S256']);
 });
 
 test('2. Protected Resource Metadata: GET /.well-known/oauth-protected-resource', async () => {
   const res = await makeRequest({ path: '/.well-known/oauth-protected-resource' });
   assert.equal(res.status, 200);
+  assert.equal(res.headers['cache-control'], 'no-store, no-cache, must-revalidate');
+  assert.equal(res.headers['pragma'], 'no-cache');
   assert.ok(res.json);
   assert.equal(res.json.resource, 'https://mcp-v2.digitonsdevelopment.com/mcp');
   assert.deepEqual(res.json.authorization_servers, ['https://mcp-v2.digitonsdevelopment.com']);
