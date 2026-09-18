@@ -5,33 +5,200 @@
  */
 
 import { z } from 'zod';
+import path from 'node:path';
 import { Readable } from 'node:stream';
 import {
   getDriveClient,
   getDocsClient,
   getSheetsClient,
-  getSlidesClient
+  getSlidesClient,
+  isInvalidGrantError,
+  executeWithRetry
 } from './google.js';
 import { getPublicOrigin } from './oauth.js';
 import { createGoogleLinkToken } from './google-oauth.js';
+import { deleteUserGoogleRecord } from './user-store.js';
 import { auditLog } from './audit.js';
 
 // Maximum upload/read content size (10 MB)
-const MAX_CONTENT_BYTES = 10 * 1024 * 1024;
+export const MAX_CONTENT_BYTES = 10 * 1024 * 1024;
 
 /**
- * Helper to convert stream to string with size limit.
+ * Helper to determine whether content should be treated as text or binary.
+ * Avoids simplistic assumptions, handles Google Workspace exports and common formats,
+ * and safely falls back to filename extension or binary defaults.
+ *
+ * @param {string} [mimeType] - The MIME type string (e.g. 'application/json; charset=utf-8')
+ * @param {string} [filename] - The optional filename (e.g. 'notes.md')
+ * @returns {boolean} - true if text-compatible, false if binary
  */
-async function streamToString(stream, maxBytes = MAX_CONTENT_BYTES) {
+export function isTextMimeType(mimeType, filename) {
+  const cleanMime = (mimeType || '').split(';')[0].trim().toLowerCase();
+
+  // 1. Explicit known binary types - NEVER treat as text
+  const explicitBinaryMimes = new Set([
+    'application/pdf',
+    'application/zip',
+    'application/gzip',
+    'application/x-tar',
+    'application/x-bzip2',
+    'application/x-7z-compressed',
+    'application/x-rar-compressed',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // pptx
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
+    'application/epub+zip',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation'
+  ]);
+
+  if (explicitBinaryMimes.has(cleanMime)) {
+    return false;
+  }
+
+  // Binary media types (except SVG)
+  if (
+    (cleanMime.startsWith('image/') && cleanMime !== 'image/svg+xml') ||
+    cleanMime.startsWith('audio/') ||
+    cleanMime.startsWith('video/')
+  ) {
+    return false;
+  }
+
+  // 2. Explicit known text types
+  if (cleanMime.startsWith('text/')) {
+    return true;
+  }
+
+  const explicitTextMimes = new Set([
+    'application/json',
+    'application/ld+json',
+    'application/xml',
+    'application/javascript',
+    'application/ecmascript',
+    'application/x-javascript',
+    'application/typescript',
+    'application/x-typescript',
+    'application/sql',
+    'application/graphql',
+    'application/yaml',
+    'application/x-yaml',
+    'application/toml',
+    'application/x-sh',
+    'application/x-bash',
+    'application/x-csh',
+    'application/x-zsh',
+    'application/x-httpd-php',
+    'application/x-latex',
+    'application/x-tex',
+    'application/postscript',
+    'image/svg+xml'
+  ]);
+
+  if (explicitTextMimes.has(cleanMime)) {
+    return true;
+  }
+
+  // 3. Structured text suffixes per RFC 6838 (e.g. +json, +xml, +yaml)
+  if (
+    cleanMime.endsWith('+json') ||
+    cleanMime.endsWith('+xml') ||
+    cleanMime.endsWith('+yaml') ||
+    cleanMime.endsWith('+yml')
+  ) {
+    return true;
+  }
+
+  // 4. Filename extension fallback for ambiguous or generic MIME types (e.g. application/octet-stream or missing)
+  if (filename && typeof filename === 'string') {
+    const ext = path.extname(filename).toLowerCase();
+    const textExtensions = new Set([
+      '.txt', '.csv', '.tsv', '.tab', '.json', '.jsonl', '.ndjson',
+      '.md', '.markdown', '.mdown', '.html', '.htm', '.css', '.scss', '.sass', '.less',
+      '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx',
+      '.xml', '.svg', '.yaml', '.yml', '.toml', '.ini', '.conf', '.cfg',
+      '.sh', '.bash', '.zsh', '.fish', '.bat', '.ps1',
+      '.sql', '.py', '.rb', '.java', '.c', '.cpp', '.cc', '.h', '.hpp',
+      '.cs', '.go', '.rs', '.php', '.env', '.log', '.diff', '.patch',
+      '.properties', '.rst', '.tex', '.proto'
+    ]);
+
+    const binaryExtensions = new Set([
+      '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.tiff', '.tif',
+      '.zip', '.tar', '.gz', '.tgz', '.bz2', '.7z', '.rar',
+      '.docx', '.xlsx', '.pptx', '.doc', '.xls', '.ppt',
+      '.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a',
+      '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.webm',
+      '.exe', '.bin', '.dll', '.so', '.dylib', '.dmg', '.iso'
+    ]);
+
+    if (textExtensions.has(ext)) {
+      return true;
+    }
+    if (binaryExtensions.has(ext)) {
+      return false;
+    }
+  }
+
+  // Default safely to false (binary Base64) to prevent any silent corruption of unknown formats
+  return false;
+}
+
+/**
+ * Determine if a MIME type represents a native Google Workspace document/item (DRV-03).
+ */
+export function isGoogleWorkspaceMimeType(mimeType) {
+  return typeof mimeType === 'string' && mimeType.startsWith('application/vnd.google-apps.');
+}
+
+/**
+ * Guidance message directing users toward dedicated Workspace operations when direct update is blocked.
+ */
+export function getWorkspaceToolGuidance(mimeType) {
+  switch (mimeType) {
+    case 'application/vnd.google-apps.spreadsheet':
+      return "Direct content overwrite is not supported for native Google Spreadsheets. Use dedicated Google Sheets tools instead: 'drive_sheet_update_range' or 'drive_sheet_append_rows'.";
+    case 'application/vnd.google-apps.presentation':
+      return "Direct content overwrite is not supported for native Google Slides presentations. Use dedicated Google Slides tools instead: 'drive_slides_update'.";
+    case 'application/vnd.google-apps.document':
+      return "Direct content overwrite is not supported for native Google Docs. Use dedicated Google Docs operations or create a new document with 'drive_create_file'.";
+    case 'application/vnd.google-apps.folder':
+      return "Cannot update content of a Google Drive folder. Use 'drive_create_folder' or 'drive_move_file' instead.";
+    default:
+      return `Direct content overwrite is not supported for native Google Workspace items (${mimeType}). Please use the appropriate dedicated Workspace tool or export format.`;
+  }
+}
+
+/**
+ * Helper to read stream with hard memory bound and MIME-aware encoding (DRV-02).
+ * Ensures upstream stream destruction on limit violation, independent per-request memory,
+ * and immediate buffer release on overflow.
+ */
+export async function readStreamBounded(stream, maxBytes = MAX_CONTENT_BYTES, isBinary = false) {
   return new Promise((resolve, reject) => {
-    const chunks = [];
+    let chunks = [];
     let totalBytes = 0;
+    let settled = false;
+
+    function cleanup() {
+      chunks = null;
+    }
 
     stream.on('data', chunk => {
+      if (settled) return;
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       totalBytes += buf.length;
+
       if (totalBytes > maxBytes) {
-        stream.destroy();
+        settled = true;
+        cleanup();
+        if (typeof stream.destroy === 'function') {
+          stream.destroy();
+        }
         const err = new Error(`Content exceeds maximum allowed size of ${maxBytes} bytes.`);
         err.code = 'PAYLOAD_TOO_LARGE';
         return reject(err);
@@ -40,11 +207,208 @@ async function streamToString(stream, maxBytes = MAX_CONTENT_BYTES) {
     });
 
     stream.on('end', () => {
-      resolve(Buffer.concat(chunks).toString('utf8'));
+      if (settled) return;
+      settled = true;
+      try {
+        const fullBuffer = Buffer.concat(chunks || []);
+        cleanup();
+        if (isBinary) {
+          resolve({
+            content: fullBuffer.toString('base64'),
+            size: totalBytes,
+            encoding: 'base64'
+          });
+        } else {
+          resolve({
+            content: fullBuffer.toString('utf8'),
+            size: totalBytes,
+            encoding: 'utf8'
+          });
+        }
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
     });
 
-    stream.on('error', err => reject(err));
+    stream.on('error', err => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    });
   });
+}
+
+/**
+ * Backwards-compatible helper to convert stream to string with size limit.
+ */
+export async function streamToString(stream, maxBytes = MAX_CONTENT_BYTES) {
+  const res = await readStreamBounded(stream, maxBytes, false);
+  return res.content;
+}
+
+/**
+ * Safely escape string values for Google Drive API q parameters.
+ * Escapes backslashes and single quotes.
+ */
+export function escapeDriveQueryValue(val) {
+  if (typeof val !== 'string') return '';
+  return val.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
+ * Validate and format ISO date for Google Drive API queries.
+ */
+export function formatDriveQueryDate(dateInput) {
+  if (!dateInput) return null;
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) {
+    const err = new Error(`Invalid date format: "${dateInput}". Expected valid ISO-8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ).`);
+    err.code = 'INVALID_DATE_FORMAT';
+    throw err;
+  }
+  return d.toISOString();
+}
+
+/**
+ * Supported export MIME types per Google Workspace native document type.
+ */
+export const SUPPORTED_WORKSPACE_EXPORTS = {
+  'application/vnd.google-apps.document': {
+    default: 'text/plain',
+    supported: new Set([
+      'text/plain',
+      'text/html',
+      'text/markdown',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+      'application/rtf',
+      'application/epub+zip',
+      'application/vnd.oasis.opendocument.text' // ODT
+    ])
+  },
+  'application/vnd.google-apps.spreadsheet': {
+    default: 'text/csv',
+    supported: new Set([
+      'text/csv',
+      'text/tab-separated-values',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.oasis.opendocument.spreadsheet', // ODS
+      'application/zip'
+    ])
+  },
+  'application/vnd.google-apps.presentation': {
+    default: 'text/plain',
+    supported: new Set([
+      'text/plain',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
+      'application/vnd.oasis.opendocument.presentation' // ODP
+    ])
+  },
+  'application/vnd.google-apps.drawing': {
+    default: 'image/png',
+    supported: new Set([
+      'image/svg+xml',
+      'image/png',
+      'image/jpeg',
+      'application/pdf'
+    ])
+  }
+};
+
+/**
+ * Validate requested export MIME type for Google Workspace documents.
+ */
+export function validateWorkspaceExportMime(sourceMime, requestedMime) {
+  const config = SUPPORTED_WORKSPACE_EXPORTS[sourceMime];
+  if (!config) {
+    return requestedMime || 'application/pdf';
+  }
+  if (!requestedMime) {
+    return config.default;
+  }
+  const cleanRequested = requestedMime.split(';')[0].trim().toLowerCase();
+  if (!config.supported.has(cleanRequested)) {
+    const supportedList = Array.from(config.supported).join(', ');
+    const err = new Error(`Unsupported export MIME type "${requestedMime}" for "${sourceMime}". Supported formats: ${supportedList}`);
+    err.code = 'UNSUPPORTED_EXPORT_FORMAT';
+    throw err;
+  }
+  return cleanRequested;
+}
+
+/**
+ * Build safe Google Drive search query from structured arguments.
+ */
+export function buildDriveSearchQuery(args) {
+  const clauses = [];
+
+  // Exact filename
+  if (args.name) {
+    clauses.push(`name = '${escapeDriveQueryValue(args.name)}'`);
+  }
+
+  // Filename contains
+  if (args.name_contains) {
+    clauses.push(`name contains '${escapeDriveQueryValue(args.name_contains)}'`);
+  }
+
+  // MIME type
+  if (args.mime_type) {
+    clauses.push(`mimeType = '${escapeDriveQueryValue(args.mime_type)}'`);
+  }
+
+  // Owner email
+  if (args.owner_email) {
+    clauses.push(`'${escapeDriveQueryValue(args.owner_email)}' in owners`);
+  }
+
+  // Modified date
+  if (args.modified_after) {
+    clauses.push(`modifiedTime > '${formatDriveQueryDate(args.modified_after)}'`);
+  }
+  if (args.modified_before) {
+    clauses.push(`modifiedTime < '${formatDriveQueryDate(args.modified_before)}'`);
+  }
+
+  // Created date
+  if (args.created_after) {
+    clauses.push(`createdTime > '${formatDriveQueryDate(args.created_after)}'`);
+  }
+  if (args.created_before) {
+    clauses.push(`createdTime < '${formatDriveQueryDate(args.created_before)}'`);
+  }
+
+  // Parent folder
+  if (args.parent_id) {
+    clauses.push(`'${escapeDriveQueryValue(args.parent_id)}' in parents`);
+  }
+
+  // Full-text content
+  if (args.full_text) {
+    clauses.push(`fullText contains '${escapeDriveQueryValue(args.full_text)}'`);
+  }
+
+  // Trashed state
+  if (args.trashed !== undefined) {
+    clauses.push(`trashed = ${Boolean(args.trashed)}`);
+  } else if (!args.query || !args.query.includes('trashed')) {
+    // Default to excluding trashed files unless user explicitly asks or included in query
+    clauses.push('trashed = false');
+  }
+
+  // Combine with raw query if supplied
+  if (args.query && typeof args.query === 'string' && args.query.trim()) {
+    if (clauses.length > 0) {
+      return `(${args.query.trim()}) and ${clauses.join(' and ')}`;
+    }
+    return args.query.trim();
+  }
+
+  return clauses.length > 0 ? clauses.join(' and ') : 'trashed = false';
 }
 
 /**
@@ -67,6 +431,66 @@ function formatSuccess(data) {
 async function formatError(err, userSub) {
   let message = err.message || 'Unknown error occurred';
   let errorCode = err.code || 'INTERNAL_ERROR';
+
+  // 1. Handle invalid_grant / revoked token (ERR-01)
+  if (isInvalidGrantError(err)) {
+    errorCode = 'GOOGLE_AUTH_REVOKED';
+    try {
+      if (userSub && userSub !== 'anonymous') {
+        await deleteUserGoogleRecord(userSub);
+      }
+    } catch (delErr) {
+      auditLog({
+        userSub,
+        action: 'auth.google_record_delete_error',
+        status: 'failure',
+        details: { error: delErr.message }
+      });
+    }
+
+    if (userSub && userSub !== 'anonymous') {
+      try {
+        const linkUrl = await createGoogleLinkToken(userSub);
+        message = `Google Drive authorization has been revoked or expired for your account.\nPlease reconnect your Google account using this one-time link:\n${linkUrl}\n\nThis link connects your personal Google account to your ChatGPT MCP session. This link expires in 10 minutes and can be used once.`;
+      } catch (tokenErr) {
+        message = 'Google Drive authorization has been revoked or expired. Please reconnect your Google account via the OAuth connection link.';
+      }
+    } else {
+      message = 'Google Drive authorization has been revoked or expired and valid user context is missing.';
+    }
+
+    auditLog({
+      userSub,
+      action: 'auth.google_token_revoked',
+      status: 'warning',
+      details: { code: 'GOOGLE_AUTH_REVOKED', message: 'User Google credentials purged due to invalid_grant' }
+    });
+
+    return {
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text: `Error [${errorCode}]: ${message}`
+        }
+      ]
+    };
+  }
+
+  // 2. Handle Google API Timeout
+  if (err.code === 'TIMEOUT') {
+    errorCode = 'TIMEOUT';
+    message = 'Google API request timed out after 30 seconds. Please try again.';
+    return {
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text: `Error [${errorCode}]: ${message}`
+        }
+      ]
+    };
+  }
 
   // Extract detailed Google API error diagnostics if available
   const googleError = err.response?.data?.error;
@@ -93,7 +517,7 @@ async function formatError(err, userSub) {
       detailsList.push(`Details: ${JSON.stringify(googleError.details)}`);
     }
     if (err.config?.url) {
-      const sanitizedUrl = err.config.url.replace(/([?&](?:access_token|key|secret)=)[^&]+/gi, '$1[REDACTED]');
+      const sanitizedUrl = err.config.url.replace(/([?&](?:access_token|key|secret|code|refresh_token|client_secret)=)[^&]+/gi, '$1[REDACTED]');
       detailsList.push(`Request: ${err.config.method ? err.config.method.toUpperCase() + ' ' : ''}${sanitizedUrl}`);
     }
 
@@ -122,6 +546,12 @@ async function formatError(err, userSub) {
     }
   }
 
+  // Sanitize message to prevent leaking stack traces, filesystem paths, tokens
+  message = message.split('\n    at ')[0];
+  message = message.replace(/(ya29\.[a-zA-Z0-9_\-]+)/g, '[REDACTED_TOKEN]');
+  message = message.replace(/(1\/\/[a-zA-Z0-9_\-]+)/g, '[REDACTED_REFRESH_TOKEN]');
+  message = message.replace(/(?:\/(?:Users|home|var|tmp|etc|usr|app)[^\s:)'"]*)/g, '[REDACTED_PATH]');
+
   auditLog({
     userSub,
     action: 'mcp.tool_error',
@@ -148,23 +578,42 @@ export const TOOLS = [
   // ------------------------- READ TOOLS -------------------------
   {
     name: 'drive_search',
-    description: 'Search for files in Google Drive matching a query string.',
+    description: 'Search for files in Google Drive matching simple text query or advanced structured filters (name, MIME type, owner, modification date, created date, parent folder, full text, and trash status).',
     readOnlyHint: true,
     openWorldHint: false,
     destructiveHint: false,
     schema: z.object({
-      query: z.string().describe("Drive search query (e.g., \"name contains 'quarterly' and trashed = false\")"),
-      pageSize: z.number().int().min(1).max(100).optional().default(20),
+      query: z.string().optional().describe("Optional raw Drive search query (e.g., \"name contains 'quarterly'\")"),
+      name: z.string().optional().describe('Exact filename to match'),
+      name_contains: z.string().optional().describe('Text that the filename must contain'),
+      mime_type: z.string().optional().describe('MIME type to filter by (e.g. application/pdf, text/plain)'),
+      owner_email: z.string().optional().describe('Email address of the file owner'),
+      modified_after: z.string().optional().describe('ISO-8601 date string for files modified after this time'),
+      modified_before: z.string().optional().describe('ISO-8601 date string for files modified before this time'),
+      created_after: z.string().optional().describe('ISO-8601 date string for files created after this time'),
+      created_before: z.string().optional().describe('ISO-8601 date string for files created before this time'),
+      parent_id: z.string().optional().describe('Parent folder ID to search within'),
+      full_text: z.string().optional().describe('Full-text content search term'),
+      trashed: z.boolean().optional().describe('Whether to search trashed files (defaults to false)'),
+      pageSize: z.number().int().min(1).max(1000).optional().default(20),
+      page_size: z.number().int().min(1).max(1000).optional(),
       pageToken: z.string().optional(),
-      orderBy: z.string().optional().default('modifiedTime desc')
+      page_token: z.string().optional(),
+      orderBy: z.string().optional().default('modifiedTime desc'),
+      order_by: z.string().optional()
     }),
     handler: async (args, context) => {
       const drive = await getDriveClient(context.userSub);
+      const effectiveQuery = buildDriveSearchQuery(args);
+      const effectivePageSize = Math.min(Math.max(args.page_size || args.pageSize || 20, 1), 1000);
+      const effectivePageToken = args.page_token || args.pageToken || undefined;
+      const effectiveOrderBy = args.order_by || args.orderBy || 'modifiedTime desc';
+
       const res = await drive.files.list({
-        q: args.query,
-        pageSize: args.pageSize,
-        pageToken: args.pageToken,
-        orderBy: args.orderBy,
+        q: effectiveQuery,
+        pageSize: effectivePageSize,
+        pageToken: effectivePageToken,
+        orderBy: effectiveOrderBy,
         fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, createdTime, parents, trashed, webViewLink)',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true
@@ -179,28 +628,90 @@ export const TOOLS = [
 
       return formatSuccess({
         files: res.data.files || [],
-        nextPageToken: res.data.nextPageToken || null
+        nextPageToken: res.data.nextPageToken || null,
+        totalCount: res.data.files?.length || 0
+      });
+    }
+  },
+  {
+    name: 'drive_advanced_search',
+    description: 'Perform advanced structured search for files in Google Drive with filters for filename, MIME type, owner, modification date, creation date, parent folder, and trash state.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      name: z.string().optional().describe('Exact filename to match'),
+      name_contains: z.string().optional().describe('Text that the filename must contain'),
+      mime_type: z.string().optional().describe('MIME type to filter by (e.g. application/pdf, text/plain)'),
+      owner_email: z.string().optional().describe('Email address of the file owner'),
+      modified_after: z.string().optional().describe('ISO-8601 date string for files modified after this time'),
+      modified_before: z.string().optional().describe('ISO-8601 date string for files modified before this time'),
+      created_after: z.string().optional().describe('ISO-8601 date string for files created after this time'),
+      created_before: z.string().optional().describe('ISO-8601 date string for files created before this time'),
+      parent_id: z.string().optional().describe('Parent folder ID to search within'),
+      full_text: z.string().optional().describe('Full-text content search term'),
+      trashed: z.boolean().optional().describe('Whether to search trashed files (defaults to false)'),
+      query: z.string().optional().describe("Optional raw query to combine with structured filters"),
+      pageSize: z.number().int().min(1).max(1000).optional().default(20),
+      page_size: z.number().int().min(1).max(1000).optional(),
+      pageToken: z.string().optional(),
+      page_token: z.string().optional(),
+      orderBy: z.string().optional().default('modifiedTime desc'),
+      order_by: z.string().optional()
+    }),
+    handler: async (args, context) => {
+      const drive = await getDriveClient(context.userSub);
+      const effectiveQuery = buildDriveSearchQuery(args);
+      const effectivePageSize = Math.min(Math.max(args.page_size || args.pageSize || 20, 1), 1000);
+      const effectivePageToken = args.page_token || args.pageToken || undefined;
+      const effectiveOrderBy = args.order_by || args.orderBy || 'modifiedTime desc';
+
+      const res = await drive.files.list({
+        q: effectiveQuery,
+        pageSize: effectivePageSize,
+        pageToken: effectivePageToken,
+        orderBy: effectiveOrderBy,
+        fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, createdTime, parents, trashed, webViewLink)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true
+      });
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'drive.advanced_search',
+        status: 'success',
+        details: { count: res.data.files?.length }
+      });
+
+      return formatSuccess({
+        files: res.data.files || [],
+        nextPageToken: res.data.nextPageToken || null,
+        totalCount: res.data.files?.length || 0
       });
     }
   },
   {
     name: 'drive_list_folder',
-    description: 'List items inside a specific Google Drive folder.',
+    description: 'List items inside a specific Google Drive folder with pagination support.',
     readOnlyHint: true,
     openWorldHint: false,
     destructiveHint: false,
     schema: z.object({
       folderId: z.string().optional().default('root').describe("Folder ID (use 'root' for My Drive root)"),
-      pageSize: z.number().int().min(1).max(100).optional().default(50),
-      pageToken: z.string().optional()
+      pageSize: z.number().int().min(1).max(1000).optional().default(50),
+      page_size: z.number().int().min(1).max(1000).optional(),
+      pageToken: z.string().optional(),
+      page_token: z.string().optional()
     }),
     handler: async (args, context) => {
       const drive = await getDriveClient(context.userSub);
-      const query = `'${args.folderId}' in parents and trashed = false`;
+      const effectivePageSize = Math.min(Math.max(args.page_size || args.pageSize || 50, 1), 1000);
+      const effectivePageToken = args.page_token || args.pageToken || undefined;
+      const query = `'${escapeDriveQueryValue(args.folderId)}' in parents and trashed = false`;
       const res = await drive.files.list({
         q: query,
-        pageSize: args.pageSize,
-        pageToken: args.pageToken,
+        pageSize: effectivePageSize,
+        pageToken: effectivePageToken,
         orderBy: 'folder, name',
         fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, createdTime, webViewLink)',
         supportsAllDrives: true,
@@ -269,36 +780,41 @@ export const TOOLS = [
       });
 
       const mimeType = meta.data.mimeType;
-      let content;
+      let effectiveMime = mimeType;
+      let stream;
 
       if (mimeType === 'application/vnd.google-apps.document') {
-        const targetMime = args.exportMimeType || 'text/plain';
+        effectiveMime = args.exportMimeType || 'text/plain';
         const res = await drive.files.export(
-          { fileId: args.fileId, mimeType: targetMime },
+          { fileId: args.fileId, mimeType: effectiveMime },
           { responseType: 'stream' }
         );
-        content = await streamToString(res.data);
+        stream = res.data;
       } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-        const targetMime = args.exportMimeType || 'text/csv';
+        effectiveMime = args.exportMimeType || 'text/csv';
         const res = await drive.files.export(
-          { fileId: args.fileId, mimeType: targetMime },
+          { fileId: args.fileId, mimeType: effectiveMime },
           { responseType: 'stream' }
         );
-        content = await streamToString(res.data);
+        stream = res.data;
       } else if (mimeType === 'application/vnd.google-apps.presentation') {
-        const targetMime = args.exportMimeType || 'text/plain';
+        effectiveMime = args.exportMimeType || 'text/plain';
         const res = await drive.files.export(
-          { fileId: args.fileId, mimeType: targetMime },
+          { fileId: args.fileId, mimeType: effectiveMime },
           { responseType: 'stream' }
         );
-        content = await streamToString(res.data);
+        stream = res.data;
       } else {
+        effectiveMime = meta.data.mimeType || 'application/octet-stream';
         const res = await drive.files.get(
           { fileId: args.fileId, alt: 'media', supportsAllDrives: true },
           { responseType: 'stream' }
         );
-        content = await streamToString(res.data);
+        stream = res.data;
       }
+
+      const isText = isTextMimeType(effectiveMime, meta.data.name);
+      const readResult = await readStreamBounded(stream, MAX_CONTENT_BYTES, !isText);
 
       auditLog({
         userSub: context.userSub,
@@ -310,8 +826,10 @@ export const TOOLS = [
       return formatSuccess({
         fileId: args.fileId,
         name: meta.data.name,
-        mimeType: meta.data.mimeType,
-        content
+        mimeType: effectiveMime,
+        size: readResult.size,
+        encoding: readResult.encoding,
+        content: readResult.content
       });
     }
   },
@@ -348,6 +866,68 @@ export const TOOLS = [
       );
 
       return readResult;
+    }
+  },
+  {
+    name: 'drive_download_file',
+    description: 'Download an uploaded file or export a native Google Workspace document (Docs, Sheets, Slides) from Google Drive with MIME-safe encoding.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      fileId: z.string().min(1).describe('The ID of the file to download or export'),
+      exportMimeType: z.string().optional().describe('Target export MIME type for Google Workspace documents (e.g. application/pdf, text/csv, application/vnd.openxmlformats-officedocument.wordprocessingml.document)'),
+      mimeType: z.string().optional().describe('Alias for exportMimeType')
+    }),
+    handler: async (args, context) => {
+      const drive = await getDriveClient(context.userSub);
+      const meta = await drive.files.get({
+        fileId: args.fileId,
+        fields: 'id, name, mimeType, size',
+        supportsAllDrives: true
+      });
+
+      const sourceMime = meta.data.mimeType || 'application/octet-stream';
+      const requestedExportMime = args.exportMimeType || args.mimeType;
+      let effectiveMime = sourceMime;
+      let stream;
+
+      if (isGoogleWorkspaceMimeType(sourceMime)) {
+        effectiveMime = validateWorkspaceExportMime(sourceMime, requestedExportMime);
+        const res = await drive.files.export(
+          { fileId: args.fileId, mimeType: effectiveMime },
+          { responseType: 'stream' }
+        );
+        stream = res.data;
+      } else {
+        // Normal uploaded file download
+        effectiveMime = sourceMime;
+        const res = await drive.files.get(
+          { fileId: args.fileId, alt: 'media', supportsAllDrives: true },
+          { responseType: 'stream' }
+        );
+        stream = res.data;
+      }
+
+      const isText = isTextMimeType(effectiveMime, meta.data.name);
+      const readResult = await readStreamBounded(stream, MAX_CONTENT_BYTES, !isText);
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'drive.download_file',
+        resourceId: args.fileId,
+        status: 'success'
+      });
+
+      return formatSuccess({
+        fileId: args.fileId,
+        name: meta.data.name,
+        sourceMimeType: sourceMime,
+        outputMimeType: effectiveMime,
+        size: readResult.size,
+        encoding: readResult.encoding,
+        content: readResult.content
+      });
     }
   },
 
@@ -455,8 +1035,23 @@ export const TOOLS = [
     }),
     handler: async (args, context) => {
       const drive = await getDriveClient(context.userSub);
+
+      // Pre-flight check: retrieve target file metadata to check mimeType (DRV-03)
+      const meta = await drive.files.get({
+        fileId: args.fileId,
+        fields: 'id, name, mimeType',
+        supportsAllDrives: true
+      });
+
+      const targetMime = meta.data?.mimeType;
+      if (isGoogleWorkspaceMimeType(targetMime)) {
+        const err = new Error(getWorkspaceToolGuidance(targetMime));
+        err.code = 'WORKSPACE_DOCUMENT_DIRECT_UPDATE_BLOCKED';
+        throw err;
+      }
+
       const media = {
-        mimeType: args.mimeType || 'text/plain',
+        mimeType: args.mimeType || targetMime || 'text/plain',
         body: Readable.from([args.content])
       };
 
@@ -622,6 +1217,69 @@ export const TOOLS = [
       return formatSuccess({
         success: true,
         file: res.data
+      });
+    }
+  },
+  {
+    name: 'drive_restore_file',
+    description: 'Restore a previously trashed file or folder in Google Drive back to its active state.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      fileId: z.string().min(1).describe('The ID of the trashed file or folder to restore')
+    }),
+    handler: async (args, context) => {
+      const drive = await getDriveClient(context.userSub);
+      const res = await drive.files.update({
+        fileId: args.fileId,
+        requestBody: { trashed: false },
+        fields: 'id, name, mimeType, trashed, modifiedTime',
+        supportsAllDrives: true
+      });
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'drive.restore_file',
+        resourceId: args.fileId,
+        status: 'success'
+      });
+
+      return formatSuccess({
+        success: true,
+        restored: true,
+        file: res.data
+      });
+    }
+  },
+  {
+    name: 'drive_delete_file_permanently',
+    description: 'Permanently delete a file or folder from Google Drive. WARNING: This operation is irreversible and bypasses trash. Content cannot be recovered.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+    schema: z.object({
+      fileId: z.string().min(1).describe('The ID of the file or folder to permanently delete')
+    }),
+    handler: async (args, context) => {
+      const drive = await getDriveClient(context.userSub);
+      await drive.files.delete({
+        fileId: args.fileId,
+        supportsAllDrives: true
+      });
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'drive.delete_permanently',
+        resourceId: args.fileId,
+        status: 'success'
+      });
+
+      return formatSuccess({
+        success: true,
+        permanent: true,
+        fileId: args.fileId,
+        message: 'File permanently deleted.'
       });
     }
   },
@@ -885,18 +1543,27 @@ export const TOOLS = [
   // ------------------------- PERMISSIONS TOOLS -------------------------
   {
     name: 'drive_list_permissions',
-    description: 'List sharing permissions for a file or folder.',
+    description: 'List sharing permissions for a file or folder with pagination support.',
     readOnlyHint: true,
     openWorldHint: false,
     destructiveHint: false,
     schema: z.object({
-      fileId: z.string().min(1).describe('The ID of the file or folder')
+      fileId: z.string().min(1).describe('The ID of the file or folder'),
+      pageSize: z.number().int().min(1).max(100).optional().default(100),
+      page_size: z.number().int().min(1).max(100).optional(),
+      pageToken: z.string().optional(),
+      page_token: z.string().optional()
     }),
     handler: async (args, context) => {
       const drive = await getDriveClient(context.userSub);
+      const effectivePageSize = Math.min(Math.max(args.page_size || args.pageSize || 100, 1), 100);
+      const effectivePageToken = args.page_token || args.pageToken || undefined;
+
       const res = await drive.permissions.list({
         fileId: args.fileId,
-        fields: 'permissions(id, type, role, emailAddress, displayName)',
+        pageSize: effectivePageSize,
+        pageToken: effectivePageToken,
+        fields: 'nextPageToken, permissions(id, type, role, emailAddress, displayName)',
         supportsAllDrives: true
       });
 
@@ -909,7 +1576,8 @@ export const TOOLS = [
 
       return formatSuccess({
         fileId: args.fileId,
-        permissions: res.data.permissions || []
+        permissions: res.data.permissions || [],
+        nextPageToken: res.data.nextPageToken || null
       });
     }
   },
@@ -1079,7 +1747,12 @@ export async function executeMcpTool(toolName, args, userSub) {
   try {
     // Validate arguments with Zod schema
     const validatedArgs = tool.schema.parse(safeArgs);
-    return await tool.handler(validatedArgs, { userSub });
+    const retryOptions = {
+      userSub,
+      toolName,
+      ...(tool.destructiveHint ? { maxAttempts: 1 } : {})
+    };
+    return await executeWithRetry(() => tool.handler(validatedArgs, { userSub }), retryOptions);
   } catch (err) {
     return await formatError(err, userSub);
   }

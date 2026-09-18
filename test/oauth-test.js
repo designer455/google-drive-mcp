@@ -17,6 +17,7 @@ process.env.MCP_PUBLIC_ORIGIN = 'https://mcp-v2.digitonsdevelopment.com';
 process.env.MCP_PUBLIC_URL = 'https://mcp-v2.digitonsdevelopment.com/mcp';
 process.env.CHATGPT_OAUTH_CLIENT_ID = 'test-chatgpt-client';
 process.env.CHATGPT_OAUTH_CLIENT_SECRET = 'test-chatgpt-secret';
+process.env.CHATGPT_OAUTH_REDIRECT_URI = 'https://chatgpt.com/aip/callback';
 
 const { app } = await import('../src/server.js');
 const { computeS256Challenge, verifyCodeChallenge, generateUserSub } = await import('../src/oauth.js');
@@ -117,8 +118,10 @@ test('2. Protected Resource Metadata: GET /.well-known/oauth-protected-resource'
 });
 
 test('3. Authorize endpoint: GET /authorize renders consent page', async () => {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = computeS256Challenge(verifier);
   const res = await makeRequest({
-    path: '/authorize?response_type=code&client_id=test-chatgpt-client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Faip%2Fcallback&scope=drive&state=state123'
+    path: `/authorize?response_type=code&client_id=test-chatgpt-client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Faip%2Fcallback&scope=drive&state=state123&code_challenge=${challenge}&code_challenge_method=S256`
   });
   assert.equal(res.status, 200);
   assert.ok(res.body.includes('Authorize ChatGPT Connection'));
@@ -126,8 +129,10 @@ test('3. Authorize endpoint: GET /authorize renders consent page', async () => {
 });
 
 test('4. Authorize endpoint: rejects invalid client_id', async () => {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = computeS256Challenge(verifier);
   const res = await makeRequest({
-    path: '/authorize?response_type=code&client_id=wrong-client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Faip%2Fcallback'
+    path: `/authorize?response_type=code&client_id=wrong-client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Faip%2Fcallback&code_challenge=${challenge}&code_challenge_method=S256`
   });
   assert.equal(res.status, 400);
   assert.ok(res.body.includes('Invalid client_id'));
@@ -263,12 +268,14 @@ test('8. Authorization code replay is rejected', async () => {
 
 test('9. Expired authorization code is rejected', async () => {
   const code = 'mcp_code_expired_test';
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = computeS256Challenge(verifier);
   await saveMcpAuthCode({
     code,
     clientId: 'test-chatgpt-client',
     redirectUri: 'https://chatgpt.com/aip/callback',
-    codeChallenge: null,
-    codeChallengeMethod: null,
+    codeChallenge: challenge,
+    codeChallengeMethod: 'S256',
     userSub: 'usr_expired_sub',
     scope: 'drive',
     expiresInMs: -1000 // Already expired
@@ -282,7 +289,8 @@ test('9. Expired authorization code is rejected', async () => {
       code,
       client_id: 'test-chatgpt-client',
       client_secret: 'test-chatgpt-secret',
-      redirect_uri: 'https://chatgpt.com/aip/callback'
+      redirect_uri: 'https://chatgpt.com/aip/callback',
+      code_verifier: verifier
     }
   });
   assert.equal(tokenRes.status, 400);

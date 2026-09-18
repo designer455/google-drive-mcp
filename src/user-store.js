@@ -8,6 +8,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { auditLog } from './audit.js';
+import {
+  safeReadEncryptedJsonSync,
+  safeWriteEncryptedJsonSync,
+  getStorageEncryptionKey,
+  encryptData,
+  decryptData,
+  parseEncryptionKey,
+  isEncryptedEnvelope
+} from './crypto-storage.js';
+
+export {
+  getStorageEncryptionKey,
+  encryptData,
+  decryptData,
+  parseEncryptionKey,
+  isEncryptedEnvelope,
+  safeReadEncryptedJsonSync,
+  safeWriteEncryptedJsonSync
+};
 
 // Resolve DATA_DIR safely with local fallback if configured path is inaccessible
 const DEFAULT_HOSTINGER_DATA_DIR = '/home/u142843264/.google-drive-mcp-v2';
@@ -133,7 +152,7 @@ function safeReadJsonSync(filePath, defaultValue) {
 export async function getUserGoogleRecord(userSub) {
   if (!userSub) return null;
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(USERS_FILE, { users: {} });
+    const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     return data.users?.[userSub] || null;
   });
 }
@@ -148,7 +167,7 @@ export async function getUserGoogleRecord(userSub) {
 export async function setUserGoogleTokens(userSub, tokens, accountInfo = null) {
   if (!userSub) throw new Error('userSub is required');
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(USERS_FILE, { users: {} });
+    const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     if (!data.users) data.users = {};
 
     const existing = data.users[userSub] || {};
@@ -167,7 +186,7 @@ export async function setUserGoogleTokens(userSub, tokens, accountInfo = null) {
       updatedAt: now
     };
 
-    safeWriteJsonSync(USERS_FILE, data);
+    safeWriteEncryptedJsonSync(USERS_FILE, data, undefined, safeWriteJsonSync);
     return data.users[userSub];
   });
 }
@@ -181,12 +200,12 @@ export async function setUserGoogleTokens(userSub, tokens, accountInfo = null) {
 export async function deleteUserGoogleRecord(userSub) {
   if (!userSub) return false;
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(USERS_FILE, { users: {} });
+    const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     if (!data.users || !data.users[userSub]) {
       return false;
     }
     delete data.users[userSub];
-    safeWriteJsonSync(USERS_FILE, data);
+    safeWriteEncryptedJsonSync(USERS_FILE, data, undefined, safeWriteJsonSync);
     return true;
   });
 }
@@ -391,7 +410,7 @@ export async function saveMcpAuthCode({
   expiresInMs = 300000
 }) {
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} });
+    const data = safeReadEncryptedJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} }, undefined, safeWriteJsonSync);
     const now = Date.now();
     data.codes = data.codes || {};
     data.codes[code] = {
@@ -406,7 +425,7 @@ export async function saveMcpAuthCode({
       expiresAt: now + expiresInMs,
       used: false
     };
-    safeWriteJsonSync(MCP_AUTH_FILE, data);
+    safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
   });
 }
 
@@ -421,7 +440,7 @@ export async function consumeMcpAuthCode(code) {
   }
 
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} });
+    const data = safeReadEncryptedJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} }, undefined, safeWriteJsonSync);
     const record = data.codes?.[code];
 
     if (!record) {
@@ -432,7 +451,7 @@ export async function consumeMcpAuthCode(code) {
 
     if (record.used) {
       delete data.codes[code];
-      safeWriteJsonSync(MCP_AUTH_FILE, data);
+      safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
       const err = new Error('Authorization code has already been used');
       err.code = 'INVALID_GRANT';
       throw err;
@@ -441,7 +460,7 @@ export async function consumeMcpAuthCode(code) {
     const now = Date.now();
     if (record.expiresAt < now) {
       delete data.codes[code];
-      safeWriteJsonSync(MCP_AUTH_FILE, data);
+      safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
       const err = new Error('Authorization code has expired');
       err.code = 'INVALID_GRANT';
       throw err;
@@ -450,7 +469,7 @@ export async function consumeMcpAuthCode(code) {
     // Mark used and remove
     record.used = true;
     delete data.codes[code];
-    safeWriteJsonSync(MCP_AUTH_FILE, data);
+    safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
 
     return record;
   });
@@ -469,7 +488,7 @@ export async function saveMcpTokens({
   refreshExpiresInMs = 2592000000 // 30 days
 }) {
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} });
+    const data = safeReadEncryptedJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} }, undefined, safeWriteJsonSync);
     const now = Date.now();
     data.tokens = data.tokens || {};
 
@@ -497,7 +516,7 @@ export async function saveMcpTokens({
       };
     }
 
-    safeWriteJsonSync(MCP_AUTH_FILE, data);
+    safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
   });
 }
 
@@ -507,13 +526,13 @@ export async function saveMcpTokens({
 export async function getMcpToken(tokenString) {
   if (!tokenString) return null;
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} });
+    const data = safeReadEncryptedJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} }, undefined, safeWriteJsonSync);
     const tokenRecord = data.tokens?.[tokenString];
     if (!tokenRecord) return null;
 
     if (tokenRecord.expiresAt < Date.now()) {
       delete data.tokens[tokenString];
-      safeWriteJsonSync(MCP_AUTH_FILE, data);
+      safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
       return null;
     }
 
@@ -527,10 +546,10 @@ export async function getMcpToken(tokenString) {
 export async function revokeMcpToken(tokenString) {
   if (!tokenString) return;
   return fileMutex.runExclusive(async () => {
-    const data = safeReadJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} });
+    const data = safeReadEncryptedJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} }, undefined, safeWriteJsonSync);
     if (data.tokens && data.tokens[tokenString]) {
       delete data.tokens[tokenString];
-      safeWriteJsonSync(MCP_AUTH_FILE, data);
+      safeWriteEncryptedJsonSync(MCP_AUTH_FILE, data, undefined, safeWriteJsonSync);
     }
   });
 }

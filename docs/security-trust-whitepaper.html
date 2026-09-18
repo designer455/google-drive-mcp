@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Security & Data Privacy Whitepaper - Digitons Google Drive MCP</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 10mm 12mm 10mm 12mm;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      line-height: 1.4;
+      font-size: 9pt;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    .header {
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .brand-title {
+      font-size: 16pt;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+      margin: 0 0 2px 0;
+    }
+    .brand-subtitle {
+      font-size: 9.5pt;
+      font-weight: 600;
+      color: #0284c7;
+      margin: 0;
+    }
+    .doc-meta {
+      text-align: right;
+      font-size: 8pt;
+      color: #64748b;
+      line-height: 1.3;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .badge-verified {
+      background: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+    }
+    h2 {
+      font-size: 10.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 10px 0 4px 0;
+      padding-bottom: 2px;
+      border-bottom: 1px solid #e2e8f0;
+      page-break-after: avoid;
+    }
+    p {
+      margin: 0 0 6px 0;
+      color: #334155;
+    }
+    ul, ol {
+      margin: 0 0 6px 0;
+      padding-left: 16px;
+    }
+    li {
+      margin-bottom: 2px;
+      color: #334155;
+    }
+    .highlight-card {
+      background: #f8fafc;
+      border-left: 3.5px solid #0284c7;
+      border-top: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 7px 10px;
+      border-radius: 0 5px 5px 0;
+      margin: 8px 0;
+      font-size: 8.8pt;
+      page-break-inside: avoid;
+    }
+    .highlight-card strong {
+      color: #0f172a;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 6px 0;
+      page-break-inside: avoid;
+    }
+    .pillar-box {
+      border: 1px solid #e2e8f0;
+      background: #fbfcfe;
+      border-radius: 5px;
+      padding: 7px 9px;
+      page-break-inside: avoid;
+    }
+    .pillar-box h4 {
+      margin: 0 0 3px 0;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .pillar-box p {
+      font-size: 8.2pt;
+      margin: 0;
+      color: #475569;
+      line-height: 1.35;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 6px 0;
+      font-size: 8.2pt;
+      page-break-inside: avoid;
+    }
+    th {
+      background: #f1f5f9;
+      color: #0f172a;
+      text-align: left;
+      padding: 5px 7px;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+    }
+    td {
+      padding: 4px 7px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+    .tag-no {
+      background: #fef2f2;
+      color: #dc2626;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 7pt;
+      border: 1px solid #fecaca;
+      display: inline-block;
+    }
+    .tag-yes {
+      background: #ecfdf5;
+      color: #059669;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 7pt;
+      border: 1px solid #a7f3d0;
+      display: inline-block;
+    }
+    .footer {
+      margin-top: 10px;
+      padding-top: 6px;
+      border-top: 1px solid #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 7.5pt;
+      color: #64748b;
+      page-break-inside: avoid;
+    }
+    .page-break {
+      break-before: page;
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================= PAGE 1 ================= -->
+  <div class="header">
+    <div>
+      <h1 class="brand-title">Digitons Google Drive MCP</h1>
+      <p class="brand-subtitle">Security, Privacy & Data Protection Architecture</p>
+    </div>
+    <div class="doc-meta">
+      <span class="badge badge-verified">Customer Trust Document</span><br>
+      <strong>Classification:</strong> Public / Customer Facing<br>
+      <strong>Version:</strong> 2.0 (Multi-Tenant Isolated)<br>
+      <strong>Provider:</strong> Digitons Development
+    </div>
+  </div>
+
+  <div class="highlight-card">
+    <strong>Executive Privacy Guarantee:</strong><br>
+    Digitons Google Drive MCP operates on a <strong>Zero-Persistence Architecture</strong>. Your Google Drive files, document bodies, spreadsheets, presentations, and personal contents are <strong>NEVER saved, written to disk, indexed, cached, or harvested</strong> on our servers.
+  </div>
+
+  <h2>1. Overview & Operational Model</h2>
+  <p>
+    Digitons Google Drive MCP functions exclusively as a secure, ephemeral proxy between OpenAI ChatGPT / AI Agents and your authorized Google Drive account. When an AI tool reads or searches a document at your command, data streams directly through volatile runtime memory (RAM) via encrypted HTTPS/TLS and is immediately discarded from memory once forwarded to your active chat session.
+  </p>
+
+  <h2>2. Architectural Security Controls</h2>
+  <div class="grid-2">
+    <div class="pillar-box">
+      <h4>🔒 1. Strict Multi-User Isolation</h4>
+      <p>
+        Every user links their own Google Account. There are <strong>no shared credentials</strong> or master service accounts. User A cannot view, discover, or modify User B's files under any scenario.
+      </p>
+    </div>
+    <div class="pillar-box">
+      <h4>🚫 2. Zero File Retention on Server</h4>
+      <p>
+        Drive files are streamed strictly in-memory during active tool calls. No files, metadata caches, or full-text indexes ever touch persistent storage on our servers.
+      </p>
+    </div>
+    <div class="pillar-box">
+      <h4>🛡️ 3. POSIX-Restricted Credential Store</h4>
+      <p>
+        OAuth session tokens are saved in restricted directories with strict operating system POSIX permissions: directory mode <code>0700</code> and storage files <code>0600</code> (owner process only).
+      </p>
+    </div>
+    <div class="pillar-box">
+      <h4>⚡ 4. Cryptographic PKCE & Anti-Replay</h4>
+      <p>
+        Built on standard OAuth 2.0 with <strong>PKCE S256</strong> (RFC 7636). One-time link tokens expire in 10 minutes, are stored exclusively as one-way SHA-256 hashes, and are destroyed atomically after first use.
+      </p>
+    </div>
+  </div>
+
+  <h2>3. Total User Control & Instant Revocation</h2>
+  <p>
+    Users maintain absolute ownership and control over their Google account credentials at all times:
+  </p>
+  <div class="highlight-card" style="border-left-color: #059669;">
+    <strong>Two Instant Methods to Disconnect & Purge Data:</strong>
+    <ol style="margin: 3px 0 0 0; padding-left: 14px;">
+      <li><strong>Direct Disconnect in ChatGPT:</strong> Asking to disconnect triggers an automated disconnect call (<code>POST /auth/google/disconnect</code>), which instantly revokes tokens with Google and wipes all local credentials from the server.</li>
+      <li><strong>Via Google Account Settings:</strong> You can instantly revoke permissions at any time from your Google Dashboard at <a href="https://myaccount.google.com/permissions" style="color:#0284c7;">myaccount.google.com/permissions</a>.</li>
+    </ol>
+  </div>
+
+  <div class="footer">
+    <div>Digitons Google Drive MCP — Customer Trust Document</div>
+    <div>Page 1 of 2</div>
+  </div>
+
+  <!-- ================= PAGE 2 ================= -->
+  <div class="page-break"></div>
+
+  <div class="header">
+    <div>
+      <h1 class="brand-title" style="font-size: 14pt;">Digitons Google Drive MCP</h1>
+      <p class="brand-subtitle">Data Classification Matrix & Compliance</p>
+    </div>
+    <div class="doc-meta">
+      <strong>Customer Trust Document</strong><br>
+      Page 2 of 2
+    </div>
+  </div>
+
+  <h2>4. Transparent Data Classification Matrix</h2>
+  <p>A full, transparent audit of how user data is handled by the Digitons platform:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Data Category</th>
+        <th style="width: 14%;">On Server?</th>
+        <th style="width: 21%;">Retention Period</th>
+        <th style="width: 40%;">Handling & Security Method</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Google Drive Files & Content</strong><br><small>(Docs, Sheets, PDFs, text, etc.)</small></td>
+        <td><span class="tag-no">NO</span></td>
+        <td>0 seconds (RAM only)</td>
+        <td>Streamed transiently in-memory directly from Google API to the active MCP session. Never saved to disk.</td>
+      </tr>
+      <tr>
+        <td><strong>OAuth Access & Refresh Tokens</strong></td>
+        <td><span class="tag-yes">YES (Isolated)</span></td>
+        <td>Until disconnected</td>
+        <td>Used strictly to make authorized Google API calls on your behalf. Guarded by OS mode 0600 file restrictions.</td>
+      </tr>
+      <tr>
+        <td><strong>User Account Email & Name</strong></td>
+        <td><span class="tag-yes">YES (Basic)</span></td>
+        <td>Until disconnected</td>
+        <td>Retrieved from Google UserInfo endpoint solely to confirm connection status to the user.</td>
+      </tr>
+      <tr>
+        <td><strong>One-Time Connection Tokens</strong></td>
+        <td><span class="tag-no">NO (Hash Only)</span></td>
+        <td>Max 10 minutes</td>
+        <td>Only SHA-256 cryptographic hashes are kept. Permanently destroyed upon first use or expiration.</td>
+      </tr>
+      <tr>
+        <td><strong>Audit & System Logs</strong></td>
+        <td><span class="tag-yes">YES (Sanitized)</span></td>
+        <td>Rolling retention</td>
+        <td>Operational metrics only. <strong>All tokens, keys, and authorization codes are automatically redacted (<code>[REDACTED]</code>).</strong></td>
+      </tr>
+      <tr>
+        <td><strong>AI Model Training</strong></td>
+        <td><span class="tag-no">NEVER</span></td>
+        <td>N/A</td>
+        <td>Digitons does not train, fine-tune, or adapt AI models on your files or personal data.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Logging Sanitization & Audit Integrity</h2>
+  <p>
+    The server implements continuous deep-sanitization across all loggers. Confidential values are intercepted and replaced with <code>[REDACTED]</code> prior to output:
+  </p>
+  <ul>
+    <li>Google access tokens, refresh tokens, and client secrets are stripped from log records.</li>
+    <li>MCP Bearer tokens, state parameters, and authorization codes are completely masked.</li>
+    <li>No access tokens or secrets are ever exposed in URLs, query parameters, or client redirects.</li>
+  </ul>
+
+  <h2>6. Compliance & Industry Standards</h2>
+  <ul>
+    <li><strong>Google API Services User Data Policy:</strong> Digitons strictly complies with Google's Limited Use requirements. Data received from Google APIs is never used for advertising, nor shared with unauthorized parties.</li>
+    <li><strong>Transport Layer Security:</strong> All client and API communication requires TLS 1.3 / HTTPS encryption.</li>
+    <li><strong>Model Context Protocol (MCP) Standard:</strong> Adheres to open MCP specifications with explicit tool safety hints (annotating read-only vs. destructive actions).</li>
+  </ul>
+
+  <h2>7. Verification & Official Contacts</h2>
+  <table>
+    <tr>
+      <td style="width: 32%;"><strong>Service Production Endpoint</strong></td>
+      <td><code>https://mcp-v2.digitonsdevelopment.com/mcp</code></td>
+    </tr>
+    <tr>
+      <td><strong>Privacy Policy</strong></td>
+      <td><a href="https://mcp-v2.digitonsdevelopment.com/privacy" style="color:#0284c7;">https://mcp-v2.digitonsdevelopment.com/privacy</a></td>
+    </tr>
+    <tr>
+      <td><strong>Terms of Service</strong></td>
+      <td><a href="https://mcp-v2.digitonsdevelopment.com/terms" style="color:#0284c7;">https://mcp-v2.digitonsdevelopment.com/terms</a></td>
+    </tr>
+    <tr>
+      <td><strong>Technical Support & Inquiries</strong></td>
+      <td><a href="mailto:support@digitonsdevelopment.com" style="color:#0284c7;">support@digitonsdevelopment.com</a></td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    <div>© 2026 Digitons Development. All rights reserved. Customer Trust Whitepaper.</div>
+    <div>Status: <strong>Verified & Compliant</strong></div>
+  </div>
+
+</body>
+</html>

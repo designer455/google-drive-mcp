@@ -12,7 +12,15 @@ const testDataDir = path.resolve(process.cwd(), 'data-test-tools');
 process.env.NODE_ENV = 'test';
 process.env.DATA_DIR = testDataDir;
 
-const { TOOLS, listMcpTools, executeMcpTool } = await import('../src/mcp.js');
+const {
+  TOOLS,
+  listMcpTools,
+  executeMcpTool,
+  isTextMimeType,
+  isGoogleWorkspaceMimeType,
+  readStreamBounded,
+  MAX_CONTENT_BYTES
+} = await import('../src/mcp.js');
 const { setUserGoogleTokens } = await import('../src/user-store.js');
 import * as googleModule from '../src/google.js';
 
@@ -22,20 +30,22 @@ test.after(() => {
   }
 });
 
-test('1. Tool Registry: Verifies all 23 expected tools are registered', () => {
+test('1. Tool Registry: Verifies all 27 expected tools are registered', () => {
   const registered = listMcpTools();
-  assert.equal(registered.length, 23);
+  assert.equal(registered.length, 27);
 
   const names = registered.map(t => t.name);
 
-  // 5 Read tools
+  // 7 Read tools
   assert.ok(names.includes('drive_search'));
+  assert.ok(names.includes('drive_advanced_search'));
   assert.ok(names.includes('drive_list_folder'));
   assert.ok(names.includes('drive_get_metadata'));
   assert.ok(names.includes('drive_read_file'));
+  assert.ok(names.includes('drive_download_file'));
   assert.ok(names.includes('drive_search_and_read'));
 
-  // 7 Write tools
+  // 9 Write tools
   assert.ok(names.includes('drive_create_file'));
   assert.ok(names.includes('drive_create_folder'));
   assert.ok(names.includes('drive_update_file'));
@@ -43,6 +53,8 @@ test('1. Tool Registry: Verifies all 23 expected tools are registered', () => {
   assert.ok(names.includes('drive_move_file'));
   assert.ok(names.includes('drive_copy_file'));
   assert.ok(names.includes('drive_trash_file'));
+  assert.ok(names.includes('drive_restore_file'));
+  assert.ok(names.includes('drive_delete_file_permanently'));
 
   // 4 Sheets tools
   assert.ok(names.includes('drive_sheet_create'));
@@ -92,23 +104,86 @@ const mockDriveState = {
 const mockDriveClient = {
   files: {
     list: async (params) => {
-      let filtered = mockDriveState.files.filter(f => !f.trashed);
-      if (params.q && params.q.includes('in parents')) {
-        const match = params.q.match(/'(.*?)' in parents/);
-        const folder = match ? match[1] : 'root';
-        filtered = filtered.filter(f => f.parents?.includes(folder));
+      let filtered = [...mockDriveState.files];
+      if (params.q) {
+        if (params.q.includes('trashed = false')) {
+          filtered = filtered.filter(f => !f.trashed);
+        } else if (params.q.includes('trashed = true')) {
+          filtered = filtered.filter(f => f.trashed);
+        }
+        if (params.q.includes('in parents')) {
+          const match = params.q.match(/'([^']*)' in parents/);
+          const folder = match ? match[1] : 'root';
+          filtered = filtered.filter(f => f.parents?.includes(folder));
+        }
+        if (params.q.includes('name = ')) {
+          const match = params.q.match(/name = '((?:\\'|[^'])*)'/);
+          if (match) filtered = filtered.filter(f => f.name === match[1].replace(/\\'/g, "'"));
+        }
+        if (params.q.includes('name contains ')) {
+          const match = params.q.match(/name contains '((?:\\'|[^'])*)'/);
+          if (match) filtered = filtered.filter(f => f.name?.includes(match[1].replace(/\\'/g, "'")));
+        }
+        if (params.q.includes('mimeType = ')) {
+          const match = params.q.match(/mimeType = '((?:\\'|[^'])*)'/);
+          if (match) filtered = filtered.filter(f => f.mimeType === match[1]);
+        }
+        if (params.q.includes('in owners')) {
+          const match = params.q.match(/'((?:\\'|[^'])*)' in owners/);
+          if (match) filtered = filtered.filter(f => f.owners?.includes(match[1].replace(/\\'/g, "'")) || f.ownerEmail === match[1].replace(/\\'/g, "'"));
+        }
+        if (params.q.includes('fullText contains ')) {
+          const match = params.q.match(/fullText contains '((?:\\'|[^'])*)'/);
+          if (match) filtered = filtered.filter(f => (f.content || f.name || '').includes(match[1].replace(/\\'/g, "'")));
+        }
+        if (params.q.includes('modifiedTime > ')) {
+          const match = params.q.match(/modifiedTime > '([^']*)'/);
+          if (match) filtered = filtered.filter(f => new Date(f.modifiedTime || 0) > new Date(match[1]));
+        }
+        if (params.q.includes('modifiedTime < ')) {
+          const match = params.q.match(/modifiedTime < '([^']*)'/);
+          if (match) filtered = filtered.filter(f => new Date(f.modifiedTime || 0) < new Date(match[1]));
+        }
+        if (params.q.includes('createdTime > ')) {
+          const match = params.q.match(/createdTime > '([^']*)'/);
+          if (match) filtered = filtered.filter(f => new Date(f.createdTime || 0) > new Date(match[1]));
+        }
+        if (params.q.includes('createdTime < ')) {
+          const match = params.q.match(/createdTime < '([^']*)'/);
+          if (match) filtered = filtered.filter(f => new Date(f.createdTime || 0) < new Date(match[1]));
+        }
+      } else {
+        filtered = filtered.filter(f => !f.trashed);
       }
-      return { data: { files: filtered } };
+
+      // Pagination
+      const pageSize = params.pageSize || 100;
+      let startIndex = 0;
+      if (params.pageToken) {
+        startIndex = parseInt(params.pageToken.replace('token_', ''), 10) || 0;
+      }
+      const pageFiles = filtered.slice(startIndex, startIndex + pageSize);
+      const nextIndex = startIndex + pageSize;
+      const nextPageToken = nextIndex < filtered.length ? `token_${nextIndex}` : null;
+
+      return { data: { files: pageFiles, nextPageToken } };
     },
     get: async (params) => {
       const file = mockDriveState.files.find(f => f.id === params.fileId);
       if (!file) throw new Error('File not found: ' + params.fileId);
       if (params.alt === 'media') {
+        if (file.mediaContent !== undefined) {
+          return { data: Readable.from(Array.isArray(file.mediaContent) ? file.mediaContent : [file.mediaContent]) };
+        }
         return { data: Readable.from(['Mock file media content']) };
       }
       return { data: { ...file } };
     },
     export: async (params) => {
+      const file = mockDriveState.files.find(f => f.id === params.fileId);
+      if (file && file.exportContent && file.exportContent[params.mimeType]) {
+        return { data: Readable.from([file.exportContent[params.mimeType]]) };
+      }
       return { data: Readable.from([`Mock exported document content (${params.mimeType})`]) };
     },
     create: async (params) => {
@@ -142,12 +217,26 @@ const mockDriveClient = {
     update: async (params) => {
       const file = mockDriveState.files.find(f => f.id === params.fileId);
       if (!file) throw new Error('File not found: ' + params.fileId);
+      mockDriveClient.lastUpdateParams = params;
+      if (params.media && file.mimeType?.startsWith('application/vnd.google-apps.')) {
+        throw new Error('FATAL: Direct media update should have been blocked by Workspace guard before calling files.update!');
+      }
       if (params.requestBody?.name) file.name = params.requestBody.name;
       if (params.requestBody?.trashed !== undefined) file.trashed = params.requestBody.trashed;
       if (params.addParents) {
         file.parents = [params.addParents];
       }
       return { data: { ...file, modifiedTime: new Date().toISOString() } };
+    },
+    delete: async (params) => {
+      const idx = mockDriveState.files.findIndex(f => f.id === params.fileId);
+      if (idx === -1) {
+        const err = new Error('File not found: ' + params.fileId);
+        err.code = 404;
+        throw err;
+      }
+      mockDriveState.files.splice(idx, 1);
+      return { data: {} };
     },
     copy: async (params) => {
       const orig = mockDriveState.files.find(f => f.id === params.fileId);
@@ -163,7 +252,16 @@ const mockDriveClient = {
   },
   permissions: {
     list: async (params) => {
-      return { data: { permissions: mockDriveState.permissions[params.fileId] || [] } };
+      const allPerms = mockDriveState.permissions[params.fileId] || [];
+      const pageSize = params.pageSize || 100;
+      let startIndex = 0;
+      if (params.pageToken) {
+        startIndex = parseInt(params.pageToken.replace('ptoken_', ''), 10) || 0;
+      }
+      const pagePerms = allPerms.slice(startIndex, startIndex + pageSize);
+      const nextIndex = startIndex + pageSize;
+      const nextPageToken = nextIndex < allPerms.length ? `ptoken_${nextIndex}` : null;
+      return { data: { permissions: pagePerms, nextPageToken } };
     },
     create: async (params) => {
       const perm = {
@@ -603,4 +701,629 @@ test('9. Regression Test: googleapis v146 HTTP Serialization puts spreadsheet in
     });
   }
 });
+
+// =========================================================================
+// DRV-01: Binary-Safe Drive File Reading Tests
+// =========================================================================
+
+test('DRV-01: isTextMimeType accurately classifies text vs binary formats', () => {
+  // 1. Text formats
+  assert.equal(isTextMimeType('text/plain'), true);
+  assert.equal(isTextMimeType('text/csv'), true);
+  assert.equal(isTextMimeType('text/html; charset=utf-8'), true);
+  assert.equal(isTextMimeType('text/markdown'), true);
+  assert.equal(isTextMimeType('application/json'), true);
+  assert.equal(isTextMimeType('application/xml'), true);
+  assert.equal(isTextMimeType('application/javascript'), true);
+  assert.equal(isTextMimeType('application/sql'), true);
+  assert.equal(isTextMimeType('application/yaml'), true);
+  assert.equal(isTextMimeType('image/svg+xml'), true);
+
+  // 2. Structured suffixes
+  assert.equal(isTextMimeType('application/problem+json'), true);
+  assert.equal(isTextMimeType('application/atom+xml'), true);
+  assert.equal(isTextMimeType('application/vnd.api+json'), true);
+
+  // 3. Binary formats (NEVER treated as text)
+  assert.equal(isTextMimeType('application/pdf'), false);
+  assert.equal(isTextMimeType('image/png'), false);
+  assert.equal(isTextMimeType('image/jpeg'), false);
+  assert.equal(isTextMimeType('image/webp'), false);
+  assert.equal(isTextMimeType('audio/mpeg'), false);
+  assert.equal(isTextMimeType('video/mp4'), false);
+  assert.equal(isTextMimeType('application/zip'), false);
+  assert.equal(isTextMimeType('application/gzip'), false);
+  assert.equal(isTextMimeType('application/x-tar'), false);
+  assert.equal(isTextMimeType('application/vnd.openxmlformats-officedocument.wordprocessingml.document'), false);
+  assert.equal(isTextMimeType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), false);
+  assert.equal(isTextMimeType('application/vnd.openxmlformats-officedocument.presentationml.presentation'), false);
+  assert.equal(isTextMimeType('application/msword'), false);
+  assert.equal(isTextMimeType('application/vnd.ms-excel'), false);
+
+  // 4. Extension fallback for application/octet-stream or missing MIME
+  assert.equal(isTextMimeType('application/octet-stream', 'script.py'), true);
+  assert.equal(isTextMimeType('application/octet-stream', 'styles.css'), true);
+  assert.equal(isTextMimeType('application/octet-stream', 'data.csv'), true);
+  assert.equal(isTextMimeType('application/octet-stream', 'archive.zip'), false);
+  assert.equal(isTextMimeType('application/octet-stream', 'photo.png'), false);
+  assert.equal(isTextMimeType(undefined, 'document.pdf'), false);
+  assert.equal(isTextMimeType(undefined, 'report.docx'), false);
+  assert.equal(isTextMimeType(undefined, 'notes.txt'), true);
+
+  // 5. Unknown binary fallback
+  assert.equal(isTextMimeType('application/unknown-binary', 'file'), false);
+  assert.equal(isTextMimeType('', ''), false);
+});
+
+test('DRV-01: drive_read_file returns UTF-8 for text files and Base64 for binary files', async () => {
+  // Add test files to mockDriveState
+  const pdfBytes = Buffer.from('%PDF-1.4\n%âãÏÓ\n1 0 obj<</Type/Catalog>>endobj\nxref\ntrailer<</Size 1>>\nstartxref\n%%EOF');
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D]);
+  const zipBytes = Buffer.from([0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00]);
+  const docxBytes = Buffer.from([0x50, 0x4B, 0x03, 0x04, 0x20, 0x00, 0x08, 0x00, 0x00, 0x00]);
+  const xlsxBytes = Buffer.from([0x50, 0x4B, 0x03, 0x04, 0x20, 0x00, 0x08, 0x00, 0x00, 0x01]);
+
+  mockDriveState.files.push(
+    { id: 'f_pdf', name: 'manual.pdf', mimeType: 'application/pdf', size: String(pdfBytes.length), parents: ['root'], trashed: false, mediaContent: pdfBytes },
+    { id: 'f_png', name: 'logo.png', mimeType: 'image/png', size: String(pngBytes.length), parents: ['root'], trashed: false, mediaContent: pngBytes },
+    { id: 'f_zip', name: 'backup.zip', mimeType: 'application/zip', size: String(zipBytes.length), parents: ['root'], trashed: false, mediaContent: zipBytes },
+    { id: 'f_docx', name: 'contract.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: String(docxBytes.length), parents: ['root'], trashed: false, mediaContent: docxBytes },
+    { id: 'f_xlsx', name: 'financials.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: String(xlsxBytes.length), parents: ['root'], trashed: false, mediaContent: xlsxBytes },
+    { id: 'f_txt', name: 'readme.txt', mimeType: 'text/plain', size: '18', parents: ['root'], trashed: false, mediaContent: Buffer.from('Hello text content') }
+  );
+
+  // 1. Text file read
+  const txtRes = await executeMcpTool('drive_read_file', { fileId: 'f_txt' }, mockUserSub);
+  const txtData = JSON.parse(txtRes.content[0].text);
+  assert.equal(txtData.fileId, 'f_txt');
+  assert.equal(txtData.name, 'readme.txt');
+  assert.equal(txtData.mimeType, 'text/plain');
+  assert.equal(txtData.encoding, 'utf8');
+  assert.equal(txtData.content, 'Hello text content');
+  assert.equal(txtData.size, 18);
+
+  // 2. PDF read (must be base64, not utf8 decoded)
+  const pdfRes = await executeMcpTool('drive_read_file', { fileId: 'f_pdf' }, mockUserSub);
+  const pdfData = JSON.parse(pdfRes.content[0].text);
+  assert.equal(pdfData.fileId, 'f_pdf');
+  assert.equal(pdfData.name, 'manual.pdf');
+  assert.equal(pdfData.mimeType, 'application/pdf');
+  assert.equal(pdfData.encoding, 'base64');
+  assert.equal(pdfData.content, pdfBytes.toString('base64'));
+  assert.deepEqual(Buffer.from(pdfData.content, 'base64'), pdfBytes);
+
+  // 3. PNG read
+  const pngRes = await executeMcpTool('drive_read_file', { fileId: 'f_png' }, mockUserSub);
+  const pngData = JSON.parse(pngRes.content[0].text);
+  assert.equal(pngData.encoding, 'base64');
+  assert.deepEqual(Buffer.from(pngData.content, 'base64'), pngBytes);
+
+  // 4. ZIP read
+  const zipRes = await executeMcpTool('drive_read_file', { fileId: 'f_zip' }, mockUserSub);
+  const zipData = JSON.parse(zipRes.content[0].text);
+  assert.equal(zipData.encoding, 'base64');
+  assert.deepEqual(Buffer.from(zipData.content, 'base64'), zipBytes);
+
+  // 5. DOCX read
+  const docxRes = await executeMcpTool('drive_read_file', { fileId: 'f_docx' }, mockUserSub);
+  const docxData = JSON.parse(docxRes.content[0].text);
+  assert.equal(docxData.encoding, 'base64');
+  assert.deepEqual(Buffer.from(docxData.content, 'base64'), docxBytes);
+
+  // 6. XLSX read
+  const xlsxRes = await executeMcpTool('drive_read_file', { fileId: 'f_xlsx' }, mockUserSub);
+  const xlsxData = JSON.parse(xlsxRes.content[0].text);
+  assert.equal(xlsxData.encoding, 'base64');
+  assert.deepEqual(Buffer.from(xlsxData.content, 'base64'), xlsxBytes);
+
+  // 7. Google Doc exported as PDF (binary export)
+  const docExportPdfRes = await executeMcpTool('drive_read_file', { fileId: 'doc1', exportMimeType: 'application/pdf' }, mockUserSub);
+  const docExportData = JSON.parse(docExportPdfRes.content[0].text);
+  assert.equal(docExportData.mimeType, 'application/pdf');
+  assert.equal(docExportData.encoding, 'base64');
+});
+
+// =========================================================================
+// DRV-02: Bounded File Memory Usage Tests
+// =========================================================================
+
+test('DRV-02: readStreamBounded enforces strict limit, destroys upstream stream, and releases buffers', async () => {
+  // 1. File below limit succeeds
+  const underStream = Readable.from(['chunk1', 'chunk2']);
+  const underResult = await readStreamBounded(underStream, 50, false);
+  assert.equal(underResult.content, 'chunk1chunk2');
+  assert.equal(underResult.size, 12);
+  assert.equal(underResult.encoding, 'utf8');
+
+  // 2. File exactly at limit boundary succeeds
+  const exactStream = Readable.from([Buffer.alloc(50, 'a')]);
+  const exactResult = await readStreamBounded(exactStream, 50, false);
+  assert.equal(exactResult.size, 50);
+
+  // 3. File exceeding limit fails, destroys stream, and returns PAYLOAD_TOO_LARGE
+  let streamDestroyed = false;
+  const overStream = new Readable({
+    read() {
+      this.push(Buffer.alloc(30, 'b'));
+      this.push(Buffer.alloc(30, 'c')); // Exceeds limit of 50
+    },
+    destroy(err, cb) {
+      streamDestroyed = true;
+      cb(err);
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await readStreamBounded(overStream, 50, false);
+    },
+    (err) => {
+      assert.equal(err.code, 'PAYLOAD_TOO_LARGE');
+      assert.ok(err.message.includes('exceeds maximum allowed size'));
+      return true;
+    }
+  );
+  assert.equal(streamDestroyed, true, 'Upstream stream must be destroyed immediately upon limit breach');
+
+  // 4. Verify MAX_CONTENT_BYTES constant is 10 MB
+  assert.equal(MAX_CONTENT_BYTES, 10 * 1024 * 1024);
+});
+
+test('DRV-02: Concurrent reads have independently bounded memory and do not interfere', async () => {
+  // Simulate 5 simultaneous reading operations with varying sizes and formats
+  const jobs = [
+    readStreamBounded(Readable.from(['concurrent-1']), 1000, false),
+    readStreamBounded(Readable.from([Buffer.from([0x01, 0x02, 0x03])]), 1000, true),
+    readStreamBounded(Readable.from(['under-limit']), 50, false),
+    readStreamBounded(Readable.from([Buffer.alloc(100)]), 20, false).catch(err => err),
+    readStreamBounded(Readable.from(['concurrent-2']), 1000, false)
+  ];
+
+  const results = await Promise.all(jobs);
+
+  assert.equal(results[0].content, 'concurrent-1');
+  assert.equal(results[0].encoding, 'utf8');
+
+  assert.equal(results[1].content, Buffer.from([0x01, 0x02, 0x03]).toString('base64'));
+  assert.equal(results[1].encoding, 'base64');
+
+  assert.equal(results[2].content, 'under-limit');
+
+  // The 4th job failed safely with PAYLOAD_TOO_LARGE without affecting jobs 0, 1, 2, or 4
+  assert.equal(results[3].code, 'PAYLOAD_TOO_LARGE');
+
+  assert.equal(results[4].content, 'concurrent-2');
+});
+
+// =========================================================================
+// DRV-03: Native Google Workspace Update Guard Tests
+// =========================================================================
+
+test('DRV-03: drive_update_file pre-flight guard blocks updates to native Google Workspace files', async () => {
+  // Setup files for Workspace types
+  mockDriveState.files.push(
+    { id: 'g_doc', name: 'Strategy', mimeType: 'application/vnd.google-apps.document', parents: ['root'], trashed: false },
+    { id: 'g_sheet', name: 'Q3 Plan', mimeType: 'application/vnd.google-apps.spreadsheet', parents: ['root'], trashed: false },
+    { id: 'g_slide', name: 'Pitch', mimeType: 'application/vnd.google-apps.presentation', parents: ['root'], trashed: false },
+    { id: 'g_form', name: 'Feedback', mimeType: 'application/vnd.google-apps.form', parents: ['root'], trashed: false },
+    { id: 'normal_txt', name: 'plain.txt', mimeType: 'text/plain', parents: ['root'], trashed: false }
+  );
+
+  // 1. Google Doc update blocked
+  const docRes = await executeMcpTool('drive_update_file', { fileId: 'g_doc', content: 'new text' }, mockUserSub);
+  assert.equal(docRes.isError, true);
+  assert.ok(docRes.content[0].text.includes('WORKSPACE_DOCUMENT_DIRECT_UPDATE_BLOCKED'));
+  assert.ok(docRes.content[0].text.includes('Google Docs'));
+
+  // 2. Google Sheet update blocked with guidance to drive_sheet_update_range
+  const sheetRes = await executeMcpTool('drive_update_file', { fileId: 'g_sheet', content: '1,2,3' }, mockUserSub);
+  assert.equal(sheetRes.isError, true);
+  assert.ok(sheetRes.content[0].text.includes('WORKSPACE_DOCUMENT_DIRECT_UPDATE_BLOCKED'));
+  assert.ok(sheetRes.content[0].text.includes('drive_sheet_update_range'));
+
+  // 3. Google Slide update blocked with guidance to drive_slides_update
+  const slideRes = await executeMcpTool('drive_update_file', { fileId: 'g_slide', content: 'slide text' }, mockUserSub);
+  assert.equal(slideRes.isError, true);
+  assert.ok(slideRes.content[0].text.includes('WORKSPACE_DOCUMENT_DIRECT_UPDATE_BLOCKED'));
+  assert.ok(slideRes.content[0].text.includes('drive_slides_update'));
+
+  // 4. Google Form or other application/vnd.google-apps.* blocked
+  const formRes = await executeMcpTool('drive_update_file', { fileId: 'g_form', content: 'form data' }, mockUserSub);
+  assert.equal(formRes.isError, true);
+  assert.ok(formRes.content[0].text.includes('WORKSPACE_DOCUMENT_DIRECT_UPDATE_BLOCKED'));
+
+  // 5. Normal uploaded text/binary file passes through safely and updates
+  const normalRes = await executeMcpTool('drive_update_file', { fileId: 'normal_txt', content: 'updated safe text' }, mockUserSub);
+  assert.equal(normalRes.isError, undefined);
+  const normalData = JSON.parse(normalRes.content[0].text);
+  assert.equal(normalData.success, true);
+  assert.equal(normalData.file.id, 'normal_txt');
+});
+
+// =========================================================================
+// 1. Permanent Delete Tests (drive_delete_file_permanently)
+// =========================================================================
+
+test('CORE-01: Permanent Delete irreversibly removes file and enforces safeguards', async () => {
+  // Setup file for deletion
+  const targetId = 'file_to_perm_delete';
+  mockDriveState.files.push({
+    id: targetId,
+    name: 'Obsolete Secret.txt',
+    mimeType: 'text/plain',
+    trashed: false,
+    parents: ['root']
+  });
+
+  // 1. Successful authenticated permanent deletion
+  const delRes = await executeMcpTool('drive_delete_file_permanently', { fileId: targetId }, mockUserSub);
+  assert.equal(delRes.isError, undefined);
+  const delData = JSON.parse(delRes.content[0].text);
+  assert.equal(delData.success, true);
+  assert.equal(delData.permanent, true);
+  assert.equal(delData.fileId, targetId);
+
+  // 2. Verify file is completely removed from storage and NOT merely trashed
+  const fileInStorage = mockDriveState.files.find(f => f.id === targetId);
+  assert.equal(fileInStorage, undefined, 'File must be purged from storage, not marked trashed');
+
+  // 3. Attempting to delete again fails safely with 404
+  const secondDel = await executeMcpTool('drive_delete_file_permanently', { fileId: targetId }, mockUserSub);
+  assert.equal(secondDel.isError, true);
+  assert.ok(secondDel.content[0].text.includes('File not found'));
+
+  // 4. Missing / nonexistent file fails safely
+  const nonExistent = await executeMcpTool('drive_delete_file_permanently', { fileId: 'totally_nonexistent_id' }, mockUserSub);
+  assert.equal(nonExistent.isError, true);
+  assert.ok(nonExistent.content[0].text.includes('File not found'));
+
+  // 5. User identity injection in args is stripped
+  mockDriveState.files.push({ id: 'victim_file_1', name: 'Victim.txt', mimeType: 'text/plain', trashed: false });
+  const injectedCall = await executeMcpTool('drive_delete_file_permanently', { fileId: 'victim_file_1', userSub: 'attacker', userId: 'attacker' }, mockUserSub);
+  assert.equal(injectedCall.isError, undefined);
+  assert.equal(mockDriveState.files.find(f => f.id === 'victim_file_1'), undefined);
+});
+
+// =========================================================================
+// 2. Restore From Trash Tests (drive_restore_file)
+// =========================================================================
+
+test('CORE-02: Restore From Trash reactivates trashed files safely', async () => {
+  const trashedFileId = 'file_trashed_for_restore';
+  mockDriveState.files.push({
+    id: trashedFileId,
+    name: 'Accidentally Trashed.txt',
+    mimeType: 'text/plain',
+    trashed: true,
+    parents: ['root']
+  });
+
+  // 1. Restore previously trashed file
+  const restoreRes = await executeMcpTool('drive_restore_file', { fileId: trashedFileId }, mockUserSub);
+  assert.equal(restoreRes.isError, undefined);
+  const restoreData = JSON.parse(restoreRes.content[0].text);
+  assert.equal(restoreData.success, true);
+  assert.equal(restoreData.restored, true);
+  assert.equal(restoreData.file.trashed, false);
+
+  // Verify in mock storage
+  const restoredFile = mockDriveState.files.find(f => f.id === trashedFileId);
+  assert.equal(restoredFile.trashed, false);
+
+  // 2. Restoring an already active (non-trashed) file succeeds idempotently
+  const activeRes = await executeMcpTool('drive_restore_file', { fileId: trashedFileId }, mockUserSub);
+  assert.equal(activeRes.isError, undefined);
+  const activeData = JSON.parse(activeRes.content[0].text);
+  assert.equal(activeData.file.trashed, false);
+
+  // 3. Restoring a nonexistent file fails safely
+  const nonExistent = await executeMcpTool('drive_restore_file', { fileId: 'nonexistent_restore_target' }, mockUserSub);
+  assert.equal(nonExistent.isError, true);
+  assert.ok(nonExistent.content[0].text.includes('File not found'));
+});
+
+// =========================================================================
+// 3. Advanced Search Tests (drive_search & drive_advanced_search)
+// =========================================================================
+
+test('CORE-03: Advanced Search translates structured filters and escapes special characters', async () => {
+  // Populate files for search filter assertions
+  const fDateOld = new Date('2025-01-01T00:00:00Z').toISOString();
+  const fDateNew = new Date('2026-06-01T00:00:00Z').toISOString();
+
+  mockDriveState.files.push(
+    { id: 'search_f1', name: "O'Reilly 2026 Budget.pdf", mimeType: 'application/pdf', ownerEmail: 'audit@digitons.com', modifiedTime: fDateNew, createdTime: fDateOld, content: 'quarterly financial audit', parents: ['folder_finance'], trashed: false },
+    { id: 'search_f2', name: 'Vendor Contract.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ownerEmail: 'legal@digitons.com', modifiedTime: fDateOld, createdTime: fDateOld, content: 'quarterly procurement', parents: ['folder_legal'], trashed: false },
+    { id: 'search_f3', name: 'Old Strategy.txt', mimeType: 'text/plain', ownerEmail: 'ceo@digitons.com', modifiedTime: fDateOld, createdTime: fDateOld, content: 'confidential strategy', parents: ['folder_exec'], trashed: true }
+  );
+
+  // 1. Exact filename match with single-quote escaping
+  const exactRes = await executeMcpTool('drive_search', { name: "O'Reilly 2026 Budget.pdf" }, mockUserSub);
+  assert.equal(exactRes.isError, undefined);
+  const exactData = JSON.parse(exactRes.content[0].text);
+  assert.equal(exactData.files.length, 1);
+  assert.equal(exactData.files[0].id, 'search_f1');
+
+  // 2. Filename contains
+  const containsRes = await executeMcpTool('drive_search', { name_contains: 'Budget' }, mockUserSub);
+  const containsData = JSON.parse(containsRes.content[0].text);
+  assert.equal(containsData.files.length, 1);
+  assert.equal(containsData.files[0].id, 'search_f1');
+
+  // 3. MIME type filter
+  const mimeRes = await executeMcpTool('drive_search', { mime_type: 'application/pdf' }, mockUserSub);
+  const mimeData = JSON.parse(mimeRes.content[0].text);
+  assert.ok(mimeData.files.some(f => f.id === 'search_f1'));
+
+  // 4. Owner filter
+  const ownerRes = await executeMcpTool('drive_search', { owner_email: 'audit@digitons.com' }, mockUserSub);
+  const ownerData = JSON.parse(ownerRes.content[0].text);
+  assert.equal(ownerData.files.length, 1);
+  assert.equal(ownerData.files[0].id, 'search_f1');
+
+  // 5. Modified date filter (modified after 2026-01-01)
+  const modRes = await executeMcpTool('drive_search', { modified_after: '2026-01-01T00:00:00Z' }, mockUserSub);
+  const modData = JSON.parse(modRes.content[0].text);
+  assert.equal(modData.files.length, 1);
+  assert.equal(modData.files[0].id, 'search_f1');
+
+  // 6. Parent folder filter
+  const parentRes = await executeMcpTool('drive_search', { parent_id: 'folder_finance' }, mockUserSub);
+  const parentData = JSON.parse(parentRes.content[0].text);
+  assert.equal(parentData.files.length, 1);
+  assert.equal(parentData.files[0].id, 'search_f1');
+
+  // 7. Full-text content search
+  const ftRes = await executeMcpTool('drive_search', { full_text: 'procurement' }, mockUserSub);
+  const ftData = JSON.parse(ftRes.content[0].text);
+  assert.equal(ftData.files.length, 1);
+  assert.equal(ftData.files[0].id, 'search_f2');
+
+  // 8. Trashed state filtering
+  const trashedRes = await executeMcpTool('drive_search', { trashed: true }, mockUserSub);
+  const trashedData = JSON.parse(trashedRes.content[0].text);
+  assert.ok(trashedData.files.some(f => f.id === 'search_f3'));
+
+  // 9. Invalid date string rejection
+  const invalidDate = await executeMcpTool('drive_search', { modified_after: 'invalid-date-format' }, mockUserSub);
+  assert.equal(invalidDate.isError, true);
+  assert.ok(invalidDate.content[0].text.includes('INVALID_DATE_FORMAT'));
+
+  // 10. Dedicated drive_advanced_search tool execution
+  const advRes = await executeMcpTool('drive_advanced_search', {
+    mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    parent_id: 'folder_legal'
+  }, mockUserSub);
+  assert.equal(advRes.isError, undefined);
+  const advData = JSON.parse(advRes.content[0].text);
+  assert.equal(advData.files.length, 1);
+  assert.equal(advData.files[0].id, 'search_f2');
+});
+
+// =========================================================================
+// 4. Pagination Everywhere Tests
+// =========================================================================
+
+test('CORE-04: Ubiquitous pagination enforces page size bounds and page tokens', async () => {
+  // Add 5 files in a dedicated folder for pagination
+  for (let i = 1; i <= 5; i++) {
+    mockDriveState.files.push({
+      id: `pfile_${i}`,
+      name: `Paged File ${i}.txt`,
+      mimeType: 'text/plain',
+      parents: ['folder_page_test'],
+      trashed: false
+    });
+  }
+
+  // 1. Page size: return 2 items with next page token
+  const page1Res = await executeMcpTool('drive_list_folder', {
+    folderId: 'folder_page_test',
+    pageSize: 2
+  }, mockUserSub);
+  const page1Data = JSON.parse(page1Res.content[0].text);
+  assert.equal(page1Data.files.length, 2);
+  assert.ok(page1Data.nextPageToken, 'nextPageToken must be provided');
+
+  // 2. Fetch second page using nextPageToken
+  const page2Res = await executeMcpTool('drive_list_folder', {
+    folderId: 'folder_page_test',
+    pageSize: 2,
+    pageToken: page1Data.nextPageToken
+  }, mockUserSub);
+  const page2Data = JSON.parse(page2Res.content[0].text);
+  assert.equal(page2Data.files.length, 2);
+  assert.notEqual(page2Data.files[0].id, page1Data.files[0].id);
+
+  // 3. Search pagination with page_size / page_token snake_case alias
+  const searchPage = await executeMcpTool('drive_search', {
+    parent_id: 'folder_page_test',
+    page_size: 3
+  }, mockUserSub);
+  const searchPageData = JSON.parse(searchPage.content[0].text);
+  assert.equal(searchPageData.files.length, 3);
+  assert.ok(searchPageData.nextPageToken);
+
+  // 4. Page size limit: values above 1000 are clamped safely
+  const clampedPage = await executeMcpTool('drive_search', {
+    parent_id: 'folder_page_test',
+    pageSize: 1000
+  }, mockUserSub);
+  assert.equal(clampedPage.isError, undefined);
+
+  // 5. List permissions pagination
+  mockDriveState.permissions['file_with_many_perms'] = [
+    { id: 'perm_1', role: 'reader', type: 'user', emailAddress: 'u1@example.com' },
+    { id: 'perm_2', role: 'writer', type: 'user', emailAddress: 'u2@example.com' },
+    { id: 'perm_3', role: 'commenter', type: 'user', emailAddress: 'u3@example.com' }
+  ];
+  const permPage1 = await executeMcpTool('drive_list_permissions', {
+    fileId: 'file_with_many_perms',
+    pageSize: 2
+  }, mockUserSub);
+  const permData1 = JSON.parse(permPage1.content[0].text);
+  assert.equal(permData1.permissions.length, 2);
+  assert.ok(permData1.nextPageToken);
+
+  const permPage2 = await executeMcpTool('drive_list_permissions', {
+    fileId: 'file_with_many_perms',
+    pageSize: 2,
+    pageToken: permData1.nextPageToken
+  }, mockUserSub);
+  const permData2 = JSON.parse(permPage2.content[0].text);
+  assert.equal(permData2.permissions.length, 1);
+  assert.equal(permData2.nextPageToken, null);
+});
+
+// =========================================================================
+// 5. Download / Export Files Tests (drive_download_file)
+// =========================================================================
+
+test('CORE-05: drive_download_file handles binary downloads, Workspace exports, and MIME validation', async () => {
+  const binaryPdfBytes = Buffer.from('%PDF-1.5 test binary download stream content');
+  const normalTxtBytes = Buffer.from('Normal text download file');
+
+  mockDriveState.files.push(
+    { id: 'dl_txt', name: 'notes.txt', mimeType: 'text/plain', mediaContent: normalTxtBytes, trashed: false },
+    { id: 'dl_pdf', name: 'manual.pdf', mimeType: 'application/pdf', mediaContent: binaryPdfBytes, trashed: false },
+    {
+      id: 'dl_sheet',
+      name: 'Quarterly Numbers',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      exportContent: {
+        'text/csv': Buffer.from('Q1,100\nQ2,200'),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': Buffer.from([0x50, 0x4B, 0x03, 0x04])
+      },
+      trashed: false
+    },
+    {
+      id: 'dl_doc',
+      name: 'Executive Summary',
+      mimeType: 'application/vnd.google-apps.document',
+      exportContent: {
+        'text/plain': Buffer.from('Executive summary text content'),
+        'application/pdf': Buffer.from('%PDF-1.4 Google Doc Export')
+      },
+      trashed: false
+    }
+  );
+
+  // 1. Download normal text file (UTF-8)
+  const txtDl = await executeMcpTool('drive_download_file', { fileId: 'dl_txt' }, mockUserSub);
+  assert.equal(txtDl.isError, undefined);
+  const txtDlData = JSON.parse(txtDl.content[0].text);
+  assert.equal(txtDlData.fileId, 'dl_txt');
+  assert.equal(txtDlData.sourceMimeType, 'text/plain');
+  assert.equal(txtDlData.outputMimeType, 'text/plain');
+  assert.equal(txtDlData.encoding, 'utf8');
+  assert.equal(txtDlData.content, 'Normal text download file');
+
+  // 2. Download normal binary file (Base64)
+  const pdfDl = await executeMcpTool('drive_download_file', { fileId: 'dl_pdf' }, mockUserSub);
+  assert.equal(pdfDl.isError, undefined);
+  const pdfDlData = JSON.parse(pdfDl.content[0].text);
+  assert.equal(pdfDlData.fileId, 'dl_pdf');
+  assert.equal(pdfDlData.sourceMimeType, 'application/pdf');
+  assert.equal(pdfDlData.outputMimeType, 'application/pdf');
+  assert.equal(pdfDlData.encoding, 'base64');
+  assert.equal(pdfDlData.content, binaryPdfBytes.toString('base64'));
+
+  // 3. Export Google Sheet to CSV (default)
+  const sheetCsv = await executeMcpTool('drive_download_file', { fileId: 'dl_sheet' }, mockUserSub);
+  const sheetCsvData = JSON.parse(sheetCsv.content[0].text);
+  assert.equal(sheetCsvData.sourceMimeType, 'application/vnd.google-apps.spreadsheet');
+  assert.equal(sheetCsvData.outputMimeType, 'text/csv');
+  assert.equal(sheetCsvData.encoding, 'utf8');
+  assert.equal(sheetCsvData.content, 'Q1,100\nQ2,200');
+
+  // 4. Export Google Sheet to XLSX (binary)
+  const sheetXlsx = await executeMcpTool('drive_download_file', {
+    fileId: 'dl_sheet',
+    exportMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  }, mockUserSub);
+  const sheetXlsxData = JSON.parse(sheetXlsx.content[0].text);
+  assert.equal(sheetXlsxData.outputMimeType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  assert.equal(sheetXlsxData.encoding, 'base64');
+
+  // 5. Export Google Doc to PDF (binary)
+  const docPdf = await executeMcpTool('drive_download_file', {
+    fileId: 'dl_doc',
+    exportMimeType: 'application/pdf'
+  }, mockUserSub);
+  const docPdfData = JSON.parse(docPdf.content[0].text);
+  assert.equal(docPdfData.outputMimeType, 'application/pdf');
+  assert.equal(docPdfData.encoding, 'base64');
+
+  // 6. Unsupported export format rejection
+  const invalidExport = await executeMcpTool('drive_download_file', {
+    fileId: 'dl_doc',
+    exportMimeType: 'image/gif'
+  }, mockUserSub);
+  assert.equal(invalidExport.isError, true);
+  assert.ok(invalidExport.content[0].text.includes('UNSUPPORTED_EXPORT_FORMAT'));
+  assert.ok(invalidExport.content[0].text.includes('Supported formats'));
+});
+
+test('SEC-05: Destructive tools disable automated retry (maxAttempts: 1), while non-destructive tools retain retry policy', async () => {
+  const permTool = TOOLS.find(t => t.name === 'drive_delete_file_permanently');
+  assert.ok(permTool);
+  assert.equal(permTool.destructiveHint, true);
+
+  const searchTool = TOOLS.find(t => t.name === 'drive_search');
+  assert.ok(searchTool);
+  assert.equal(searchTool.destructiveHint, false);
+
+  // 1. Verify destructive tool (drive_delete_file_permanently) does NOT retry on transient 503
+  let deleteAttempts = 0;
+  const originalDelete = mockDriveClient.files.delete;
+  mockDriveClient.files.delete = async (params) => {
+    deleteAttempts++;
+    const err = new Error('Service Unavailable (Transient)');
+    err.status = 503;
+    throw err;
+  };
+
+  try {
+    const res = await executeMcpTool('drive_delete_file_permanently', { fileId: 'f1' }, mockUserSub);
+    assert.equal(res.isError, true);
+    // Crucial check: must have attempted EXACTLY 1 time, no retries
+    assert.equal(deleteAttempts, 1, 'Destructive operation must have maxAttempts: 1 (no retries)');
+  } finally {
+    mockDriveClient.files.delete = originalDelete;
+  }
+
+  // 2. Verify non-destructive tool (drive_search) DOES retry on transient 503
+  let searchAttempts = 0;
+  const originalList = mockDriveClient.files.list;
+  mockDriveClient.files.list = async (params) => {
+    searchAttempts++;
+    if (searchAttempts === 1) {
+      const err = new Error('Service Unavailable (Transient)');
+      err.status = 503;
+      throw err;
+    }
+    return originalList(params);
+  };
+
+  try {
+    const res = await executeMcpTool('drive_search', { query: "name contains 'Document'" }, mockUserSub);
+    assert.equal(res.isError, undefined);
+    // Crucial check: must have retried after the 1st failure and succeeded on attempt 2
+    assert.equal(searchAttempts, 2, 'Non-destructive tool must retry on transient error');
+    const data = JSON.parse(res.content[0].text);
+    assert.ok(Array.isArray(data.files));
+  } finally {
+    mockDriveClient.files.list = originalList;
+  }
+
+  // 3. Verify permanent delete still succeeds normally
+  mockDriveState.files.push({ id: 'sec05_file_to_delete', name: 'SEC05 Delete Me', trashed: false });
+  const successRes = await executeMcpTool('drive_delete_file_permanently', { fileId: 'sec05_file_to_delete' }, mockUserSub);
+  assert.equal(successRes.isError, undefined);
+  const successData = JSON.parse(successRes.content[0].text);
+  assert.equal(successData.success, true);
+  assert.equal(successData.permanent, true);
+  assert.equal(mockDriveState.files.some(f => f.id === 'sec05_file_to_delete'), false);
+});
+
 

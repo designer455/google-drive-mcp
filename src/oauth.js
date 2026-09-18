@@ -30,6 +30,49 @@ export function generateUserSub() {
 }
 
 /**
+ * Validate redirect_uri against configured CHATGPT_OAUTH_REDIRECT_URI or strict allowlist (SEC-01).
+ */
+export function validateRedirectUri(redirectUri) {
+  if (!redirectUri || typeof redirectUri !== 'string') return false;
+
+  let parsed;
+  try {
+    parsed = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+
+  // Reject non-http/https protocols (e.g. javascript:, data:, file:)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return false;
+  }
+
+  // In production, reject plaintext HTTP
+  if (parsed.protocol === 'http:' && process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
+  const configured = process.env.CHATGPT_OAUTH_REDIRECT_URI;
+  if (configured) {
+    const allowed = configured.split(',').map(s => s.trim()).filter(Boolean);
+    return allowed.includes(redirectUri);
+  }
+
+  // Fallback if CHATGPT_OAUTH_REDIRECT_URI is not explicitly set:
+  // Strictly allow only verified chatgpt.com subdomains over https, or localhost in dev/test
+  const isDevOrTest = process.env.NODE_ENV !== 'production' || process.env.NODE_ENV === 'test';
+  if (parsed.protocol === 'https:' && (parsed.hostname === 'chatgpt.com' || parsed.hostname.endsWith('.chatgpt.com'))) {
+    return true;
+  }
+
+  if (isDevOrTest && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Helper to compute PKCE S256 code challenge.
  */
 export function computeS256Challenge(verifier) {
@@ -40,17 +83,28 @@ export function computeS256Challenge(verifier) {
 }
 
 /**
- * Validate PKCE code_verifier against code_challenge.
+ * Validate PKCE code_verifier against code_challenge (SEC-02, SEC-03).
+ * Strictly requires method 'S256' and guards against RangeError on buffer length mismatch.
  */
 export function verifyCodeChallenge(verifier, challenge, method = 'S256') {
   if (!verifier || !challenge) return false;
-  if (method === 'S256') {
+  // SEC-03: Strictly enforce S256; reject 'plain' or other methods
+  if (method !== 'S256') return false;
+
+  try {
     const computed = computeS256Challenge(verifier);
-    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(challenge));
-  } else if (method === 'plain') {
-    return crypto.timingSafeEqual(Buffer.from(verifier), Buffer.from(challenge));
+    const bufA = Buffer.from(computed);
+    const bufB = Buffer.from(challenge);
+
+    // SEC-02: Verify lengths match before calling timingSafeEqual to avoid RangeError
+    if (bufA.length !== bufB.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
   }
-  return false;
 }
 
 /**
@@ -162,7 +216,7 @@ export function handleGetAuthorize(req, res) {
     scope = 'drive',
     state,
     code_challenge,
-    code_challenge_method = 'S256'
+    code_challenge_method
   } = req.query;
 
   if (response_type !== 'code') {
@@ -177,6 +231,24 @@ export function handleGetAuthorize(req, res) {
   const configuredClient = process.env.CHATGPT_OAUTH_CLIENT_ID;
   if (configuredClient && client_id !== configuredClient) {
     return res.status(400).send('Invalid client_id.');
+  }
+
+  // SEC-01: Validate redirect_uri against allowlist / configuration
+  if (!validateRedirectUri(redirect_uri)) {
+    return res.status(400).send('Invalid or unauthorized redirect_uri.');
+  }
+
+  // SEC-03: Enforce PKCE S256
+  if (!code_challenge || typeof code_challenge !== 'string' || !code_challenge.trim()) {
+    return res.status(400).send('Missing code_challenge. PKCE S256 is required.');
+  }
+
+  if (!code_challenge_method) {
+    return res.status(400).send('Missing code_challenge_method. Only "S256" is supported.');
+  }
+
+  if (code_challenge_method !== 'S256') {
+    return res.status(400).send('Invalid code_challenge_method. Only "S256" is supported.');
   }
 
   // Render HTML authorization consent page
@@ -247,11 +319,35 @@ export async function handlePostAuthorize(req, res) {
     scope = 'drive',
     state,
     code_challenge,
-    code_challenge_method = 'S256'
+    code_challenge_method
   } = req.body;
 
   if (!client_id || !redirect_uri) {
     return res.status(400).json({ error: 'invalid_request', error_description: 'Missing client_id or redirect_uri' });
+  }
+
+  // SEC-01: Validate redirect_uri against allowlist / configuration
+  if (!validateRedirectUri(redirect_uri)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid or unauthorized redirect_uri' });
+  }
+
+  // If client ID is configured, validate it
+  const configuredClient = process.env.CHATGPT_OAUTH_CLIENT_ID;
+  if (configuredClient && client_id !== configuredClient) {
+    return res.status(400).json({ error: 'invalid_client', error_description: 'Invalid client_id' });
+  }
+
+  // SEC-03: Enforce PKCE S256
+  if (!code_challenge || typeof code_challenge !== 'string' || !code_challenge.trim()) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code_challenge. PKCE S256 is required' });
+  }
+
+  if (!code_challenge_method) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code_challenge_method. Only "S256" is supported' });
+  }
+
+  if (code_challenge_method !== 'S256') {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid code_challenge_method. Only "S256" is supported' });
   }
 
   // Generate an internal, stable opaque user subject for this MCP user
@@ -326,25 +422,29 @@ export async function handlePostToken(req, res) {
       return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
     }
 
-    // Verify redirect_uri matches
-    if (codeRecord.redirectUri && redirect_uri && codeRecord.redirectUri !== redirect_uri) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Redirect URI mismatch' });
+    // SEC-01: Verify redirect_uri matches and is valid
+    if (!redirect_uri || !validateRedirectUri(redirect_uri) || (codeRecord.redirectUri && codeRecord.redirectUri !== redirect_uri)) {
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'Redirect URI mismatch or invalid' });
     }
 
-    // Verify PKCE if challenge was supplied during authorize
-    if (codeRecord.codeChallenge) {
-      if (!code_verifier) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing code_verifier for PKCE challenge' });
-      }
-      const valid = verifyCodeChallenge(code_verifier, codeRecord.codeChallenge, codeRecord.codeChallengeMethod);
-      if (!valid) {
-        auditLog({
-          userSub: codeRecord.userSub,
-          action: 'auth.pkce_verification_failed',
-          status: 'failure'
-        });
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
-      }
+    // SEC-03: Verify PKCE is present and valid
+    if (!codeRecord.codeChallenge) {
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing PKCE challenge on authorization code' });
+    }
+
+    if (!code_verifier) {
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing code_verifier for PKCE challenge' });
+    }
+
+    // SEC-02 & SEC-03: Verify PKCE S256 safely without RangeError
+    const valid = verifyCodeChallenge(code_verifier, codeRecord.codeChallenge, codeRecord.codeChallengeMethod || 'S256');
+    if (!valid) {
+      auditLog({
+        userSub: codeRecord.userSub,
+        action: 'auth.pkce_verification_failed',
+        status: 'failure'
+      });
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
     }
 
     // Mint access token and refresh token

@@ -19,7 +19,13 @@ const SENSITIVE_KEYS = new Set([
   'link_token',
   'linktoken',
   'tokenhash',
-  'token_hash'
+  'token_hash',
+  'encryption_key',
+  'storage_encryption_key',
+  'ciphertext',
+  'key',
+  'iv',
+  'tag'
 ]);
 
 /**
