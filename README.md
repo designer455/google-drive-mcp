@@ -1,4 +1,4 @@
-# Digitons Google Drive MCP Server v2
+# Google Drive MCP Server
 
 A production-ready, **Multi-User Google Drive Remote Model Context Protocol (MCP)** server engineered for ChatGPT.
 
@@ -129,7 +129,7 @@ To prevent exposing MCP access tokens or authorization credentials in browser UR
    ```text
    Google Drive is not connected for your account.
    Open this one-time connection link to connect your Google account:
-   https://mcp-v2.digitonsdevelopment.com/auth/google/link?code=glink_<random_hash>
+   https://mcp.yourdomain.com/auth/google/link?code=glink_<random_hash>
 
    This link connects your personal Google account to your ChatGPT MCP session. This link expires in 10 minutes and can be used once.
    ```
@@ -181,7 +181,7 @@ To prevent exposing MCP access tokens or authorization credentials in browser UR
    - Test Users: Add developer/tester Google email addresses while app is in "Testing" mode.
 5. **Create OAuth 2.0 Client ID**:
    - Application Type: **Web application**.
-   - Authorized Redirect URI: `https://mcp-v2.digitonsdevelopment.com/oauth2callback` (and `http://localhost:3000/oauth2callback` for local testing).
+   - Authorized Redirect URI: `https://mcp.yourdomain.com/oauth2callback` (and `http://localhost:3000/oauth2callback` for local testing).
    - Save the **Client ID** and **Client Secret**.
 
 > [!IMPORTANT]
@@ -197,8 +197,8 @@ To prevent exposing MCP access tokens or authorization credentials in browser UR
    - **Authentication Type**: OAuth
    - **Client ID**: Your configured `CHATGPT_OAUTH_CLIENT_ID`
    - **Client Secret**: Your configured `CHATGPT_OAUTH_CLIENT_SECRET`
-   - **Authorization URL**: `https://mcp-v2.digitonsdevelopment.com/authorize`
-   - **Token URL**: `https://mcp-v2.digitonsdevelopment.com/token`
+   - **Authorization URL**: `https://mcp.yourdomain.com/authorize`
+   - **Token URL**: `https://mcp.yourdomain.com/token`
    - **Scope**: `drive`
    - **Token Exchange Method**: Default / Basic Authorization Header or Request Body
 3. Copy the **Redirect URI** provided by ChatGPT and set it in your `.env` as `CHATGPT_OAUTH_REDIRECT_URI`.
@@ -213,9 +213,9 @@ Create `.env` using the template below:
 # Server Configuration
 PORT=3000
 NODE_ENV=production
-ALLOWED_HOST=mcp-v2.digitonsdevelopment.com
-MCP_PUBLIC_ORIGIN=https://mcp-v2.digitonsdevelopment.com
-MCP_PUBLIC_URL=https://mcp-v2.digitonsdevelopment.com/mcp
+ALLOWED_HOST=mcp.yourdomain.com
+MCP_PUBLIC_ORIGIN=https://mcp.yourdomain.com
+MCP_PUBLIC_URL=https://mcp.yourdomain.com/mcp
 
 # Persistent Storage & Encryption (Outside Git & Deployment Directories)
 DATA_DIR=/home/u142843264/.google-drive-mcp-v2
@@ -224,7 +224,7 @@ STORAGE_ENCRYPTION_KEY=64-char-hex-string-for-aes-256-gcm-storage-encryption
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=https://mcp-v2.digitonsdevelopment.com/oauth2callback
+GOOGLE_REDIRECT_URI=https://mcp.yourdomain.com/oauth2callback
 GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/documents
 
 # ChatGPT OAuth Configuration
@@ -245,9 +245,9 @@ OAUTH_GOOGLE_LINK_EXPIRY_SECONDS=600
 OPENAI_APPS_CHALLENGE_TOKEN=your-openai-apps-challenge-token
 
 # Publisher & Support Information
-SUPPORT_EMAIL=support@digitonsdevelopment.com
-COMPANY_NAME=Digitons Development
-COMPANY_WEBSITE=https://www.digitonsdevelopment.com
+SUPPORT_EMAIL=support@example.com
+COMPANY_NAME=Google Drive MCP
+COMPANY_WEBSITE=https://example.com
 ```
 
 ---
@@ -256,10 +256,10 @@ COMPANY_WEBSITE=https://www.digitonsdevelopment.com
 
 ### Public Legal & Support URLs
 The server provides public, unauthenticated informational and legal pages required for OpenAI Plugin/App Directory submission:
-- **Support URL**: `https://mcp-v2.digitonsdevelopment.com/support`
-- **Privacy Policy URL**: `https://mcp-v2.digitonsdevelopment.com/privacy`
-- **Terms of Service URL**: `https://mcp-v2.digitonsdevelopment.com/terms`
-- **Overview / Landing Page**: `https://mcp-v2.digitonsdevelopment.com/`
+- **Support URL**: `https://mcp.yourdomain.com/support`
+- **Privacy Policy URL**: `https://mcp.yourdomain.com/privacy`
+- **Terms of Service URL**: `https://mcp.yourdomain.com/terms`
+- **Overview / Landing Page**: `https://mcp.yourdomain.com/`
 
 ### Domain Verification Challenge
 When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requires domain ownership verification:
@@ -277,7 +277,7 @@ When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requi
 - [x] **Domain Challenge Endpoint**: `GET /.well-known/openai-apps-challenge` is live and returns plain text.
 - [x] **OAuth Discovery Metadata**: `GET /.well-known/oauth-authorization-server` advertises `"code_challenge_methods_supported": ["S256"]` with `Cache-Control: no-store`.
 - [x] **OpenID Configuration**: `GET /.well-known/openid-configuration` is supported as an alias for OIDC discovery clients.
-- [x] **Strict Host Validation**: Validates `ALLOWED_HOST` (`mcp-v2.digitonsdevelopment.com`) and rejects unexpected hosts.
+- [x] **Strict Host Validation**: Validates `ALLOWED_HOST` and rejects unexpected hosts.
 - [x] **Multi-User Isolation**: Every user connects their own Google account. No global or shared tokens exist.
 - [x] **Destructive Action Safeguards**: Overwrite tools have `destructiveHint: true`. Ownership transfer is strictly blocked.
 - [x] **Zero Stack Trace Leaks**: Production errors return safe, predictable error codes without stack traces.
@@ -287,7 +287,7 @@ When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requi
 ## 8. Hostinger Deployment Guide
 
 1. **Domain Configuration**:
-   Configure DNS for `mcp-v2.digitonsdevelopment.com` pointing to your Hostinger server IP. Ensure SSL is activated.
+   Configure DNS for your production domain pointing to your server IP. Ensure SSL is activated.
 
 2. **Persistent Directory**:
    Create the persistent storage directory outside the webroot / deployment directories:

@@ -1,5 +1,5 @@
 {
-  "name": "digitons-google-drive-mcp-v2",
+  "name": "google-drive-mcp",
   "version": "2.0.0",
   "description": "Multi-user Google Drive Remote MCP server for ChatGPT with isolated per-user credentials",
   "type": "module",
@@ -19,7 +19,7 @@
     "multi-user",
     "oauth"
   ],
-  "author": "Digitons Development",
+  "author": "Google Drive MCP Contributors",
   "license": "ISC",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",

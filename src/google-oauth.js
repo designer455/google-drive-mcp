@@ -21,7 +21,7 @@ import { auditLog } from './audit.js';
 export function getGoogleOAuthClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://mcp-v2.digitonsdevelopment.com/oauth2callback';
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://mcp.example.com/oauth2callback';
 
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
@@ -276,7 +276,7 @@ export async function handleGoogleOAuthCallback(req, res) {
     </div>
 
     <p style="color:#e2e8f0;font-weight:500;">You can now close this tab and return to ChatGPT.</p>
-    <div class="footer">Digitons Google Drive MCP V2</div>
+    <div class="footer">Google Drive MCP</div>
   </div>
 </body>
 </html>`);

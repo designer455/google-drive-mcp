@@ -1,5 +1,5 @@
 /**
- * HTTP Server for digitons-google-drive-mcp-v2
+ * HTTP Server for google-drive-mcp
  * Express application exposing MCP JSON-RPC endpoints, ChatGPT OAuth, and Google OAuth.
  */
 
@@ -42,7 +42,7 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 // -------------------------------------------------------------
 // Host Validation Middleware
 // -------------------------------------------------------------
-const allowedHost = process.env.ALLOWED_HOST || 'mcp-v2.digitonsdevelopment.com';
+const allowedHost = process.env.ALLOWED_HOST || 'mcp.example.com';
 
 app.use((req, res, next) => {
   // Always allow health checks
@@ -230,7 +230,7 @@ export function mcpUserRateLimiter(req, res, next) {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    server: 'digitons-google-drive-mcp-v2',
+    server: 'google-drive-mcp',
     version: '2.0.0',
     build: 'v2.0.3-docs-batch-update',
     timestamp: new Date().toISOString()
@@ -312,7 +312,7 @@ async function handleJsonRpc(reqBody, userSub) {
           }
         },
         serverInfo: {
-          name: 'digitons-google-drive-mcp-v2',
+          name: 'google-drive-mcp',
           version: '2.0.0'
         }
       }
@@ -458,14 +458,14 @@ if (process.env.NODE_ENV !== 'test' && !process.env.MCP_NO_LISTEN && !isVercel) 
   try {
     getStorageEncryptionKey();
   } catch (keyErr) {
-    console.error(`[digitons-google-drive-mcp-v2] Fatal configuration error: ${keyErr.message}`);
+    console.error(`[google-drive-mcp] Fatal configuration error: ${keyErr.message}`);
     process.exit(1);
   }
 
   const server = app.listen(PORT, () => {
-    console.log(`[digitons-google-drive-mcp-v2] Server listening on port ${PORT}`);
-    console.log(`[digitons-google-drive-mcp-v2] Allowed Host: ${allowedHost}`);
-    console.log(`[digitons-google-drive-mcp-v2] MCP Endpoint: ${getPublicOrigin()}/mcp`);
+    console.log(`[google-drive-mcp] Server listening on port ${PORT}`);
+    console.log(`[google-drive-mcp] Allowed Host: ${allowedHost}`);
+    console.log(`[google-drive-mcp] MCP Endpoint: ${getPublicOrigin()}/mcp`);
   });
 
   // Graceful shutdown

@@ -1,6 +1,6 @@
 /**
  * Audit Logging Module
- * Structured, safe JSON logging for digitons-google-drive-mcp-v2.
+ * Structured, safe JSON logging for google-drive-mcp.
  * Never logs tokens, authorization codes, or client secrets.
  */
 

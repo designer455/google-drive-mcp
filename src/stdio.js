@@ -47,7 +47,7 @@ async function handleStdioJsonRpc(reqBody, userSub) {
       result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'digitons-google-drive-mcp-v2-stdio', version: '2.0.0' }
+        serverInfo: { name: 'google-drive-mcp-stdio', version: '2.0.0' }
       }
     };
   }
@@ -82,4 +82,4 @@ async function handleStdioJsonRpc(reqBody, userSub) {
   };
 }
 
-process.stderr.write('[digitons-google-drive-mcp-v2] stdio transport initialized.\n');
+process.stderr.write('[google-drive-mcp] stdio transport initialized.\n');

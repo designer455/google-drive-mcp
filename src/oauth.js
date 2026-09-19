@@ -258,7 +258,7 @@ export function handleGetAuthorize(req, res) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Connect Digitons Google Drive MCP V2 to ChatGPT</title>
+  <title>Connect Google Drive MCP to ChatGPT</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
     .card { background: #1e293b; border-radius: 12px; padding: 32px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; }
@@ -293,7 +293,7 @@ export function handleGetAuthorize(req, res) {
       <button type="submit" class="btn">Authorize & Connect</button>
     </form>
     
-    <div class="footer">Digitons Google Drive MCP V2 (Isolated Multi-User)</div>
+    <div class="footer">Google Drive MCP (Isolated Multi-User)</div>
   </div>
 </body>
 </html>`);

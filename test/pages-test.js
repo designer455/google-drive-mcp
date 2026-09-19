@@ -13,10 +13,10 @@ const testDataDir = path.resolve(process.cwd(), 'data-test-pages');
 process.env.NODE_ENV = 'production'; // Test under production rules for host checking
 process.env.MCP_NO_LISTEN = 'true';
 process.env.DATA_DIR = testDataDir;
-process.env.ALLOWED_HOST = 'mcp-v2.digitonsdevelopment.com';
-process.env.SUPPORT_EMAIL = 'support@digitonsdevelopment.com';
-process.env.COMPANY_NAME = 'Digitons Development';
-process.env.COMPANY_WEBSITE = 'https://www.digitonsdevelopment.com';
+process.env.ALLOWED_HOST = 'mcp.example.com';
+process.env.SUPPORT_EMAIL = 'support@example.com';
+process.env.COMPANY_NAME = 'Google Drive MCP';
+process.env.COMPANY_WEBSITE = 'https://example.com';
 process.env.GOOGLE_CLIENT_SECRET = 'super-secret-google-client-secret-xyz';
 process.env.CHATGPT_OAUTH_CLIENT_SECRET = 'super-secret-chatgpt-client-secret-abc';
 process.env.OPENAI_APPS_CHALLENGE_TOKEN = 'mock-challenge-token-secret-123';
@@ -29,7 +29,7 @@ test.after(() => {
   }
 });
 
-function makeRequest({ method = 'GET', path: reqPath, host = 'mcp-v2.digitonsdevelopment.com', headers = {} }) {
+function makeRequest({ method = 'GET', path: reqPath, host = 'mcp.example.com', headers = {} }) {
   return new Promise((resolve, reject) => {
     const server = http.createServer(app);
     server.listen(0, '127.0.0.1', () => {
@@ -68,12 +68,12 @@ test('1. GET /privacy returns 200 and renders complete privacy policy', async ()
   assert.equal(res.status, 200);
   assert.ok(res.headers['content-type'].includes('text/html'));
   assert.ok(res.body.includes('Privacy Policy'));
-  assert.ok(res.body.includes('Digitons Development'));
+  assert.ok(res.body.includes('Google Drive MCP'));
   assert.ok(res.body.includes('https://www.googleapis.com/auth/drive'));
   assert.ok(res.body.includes('0600'));
   assert.ok(res.body.includes('not encrypted at rest'));
   assert.ok(res.body.includes('REDACTED'));
-  assert.ok(res.body.includes('support@digitonsdevelopment.com'));
+  assert.ok(res.body.includes('support@example.com'));
   assert.ok(res.body.includes('/terms'));
   assert.ok(res.body.includes('/support'));
 });
@@ -102,7 +102,7 @@ test('3. GET /support returns 200 and renders support & troubleshooting guide', 
   assert.ok(res.body.includes('How to Connect Your Google Drive'));
   assert.ok(res.body.includes('Troubleshooting'));
   assert.ok(res.body.includes('How to Disconnect'));
-  assert.ok(res.body.includes('support@digitonsdevelopment.com'));
+  assert.ok(res.body.includes('support@example.com'));
   assert.ok(res.body.includes('/privacy'));
   assert.ok(res.body.includes('/terms'));
 });
@@ -112,11 +112,11 @@ test('4. GET / returns 200 and renders root landing page with exact branding and
 
   assert.equal(res.status, 200);
   assert.ok(res.headers['content-type'].includes('text/html'));
-  assert.ok(res.body.includes('Digitons Google Drive MCP V2'));
-  assert.ok(res.body.includes('<title>Digitons Google Drive MCP V2</title>'));
-  assert.ok(res.body.includes('<h1>Digitons Google Drive MCP V2</h1>'));
-  assert.ok(res.body.includes('Digitons Google Drive MCP V2 is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'));
-  assert.ok(res.body.includes('digitonsdevelopment.com'));
+  assert.ok(res.body.includes('Google Drive MCP'));
+  assert.ok(res.body.includes('<title>Google Drive MCP</title>'));
+  assert.ok(res.body.includes('<h1>Google Drive MCP</h1>'));
+  assert.ok(res.body.includes('Google Drive MCP is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'));
+  assert.ok(res.body.includes('https://example.com'));
   assert.ok(res.body.includes('/privacy'));
   assert.ok(res.body.includes('/terms'));
   assert.ok(res.body.includes('/support'));

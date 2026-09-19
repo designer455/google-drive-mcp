@@ -1,10 +1,10 @@
 # ChatGPT Plugin / App Directory Submission Pack
 
-Prepared for `digitons-google-drive-mcp-v2`.
+Prepared for `google-drive-mcp`.
 
 ## Production MCP
 
-- MCP server URL: `https://mcp-v2.digitonsdevelopment.com/mcp`
+- MCP server URL: `https://mcp.yourdomain.com/mcp`
 - MCP type: Universal
 - Authentication: OAuth 2.0 + PKCE S256
 - Google authorization: per-user OAuth 2.0
@@ -14,7 +14,7 @@ Prepared for `digitons-google-drive-mcp-v2`.
 
 ### Plugin name
 
-Digitons Google Drive
+Google Drive MCP
 
 ### Short description
 
@@ -22,7 +22,7 @@ Securely search, read, create, and update your Google Drive files from ChatGPT.
 
 ### Long description
 
-Digitons Google Drive connects ChatGPT to a user's own Google Drive through per-user OAuth authorization. It supports searching and reading Drive files, creating and updating files and folders, working with Google Docs, Sheets, and Slides, and selected file-sharing operations. Each connected ChatGPT user is isolated to their own Google authorization and credentials.
+Google Drive MCP connects ChatGPT to a user's own Google Drive through per-user OAuth authorization. It supports searching and reading Drive files, creating and updating files and folders, working with Google Docs, Sheets, and Slides, and selected file-sharing operations. Each connected ChatGPT user is isolated to their own Google authorization and credentials.
 
 The plugin requests access only through the Google authorization flow and does not use a shared Google credential between users.
 
@@ -32,19 +32,19 @@ Productivity
 
 ### Website
 
-https://www.digitonsdevelopment.com/
+https://example.com/
 
 ### Support URL
 
-https://mcp-v2.digitonsdevelopment.com/support
+https://mcp.yourdomain.com/support
 
 ### Privacy policy URL
 
-https://mcp-v2.digitonsdevelopment.com/privacy
+https://mcp.yourdomain.com/privacy
 
 ### Terms URL
 
-https://mcp-v2.digitonsdevelopment.com/terms
+https://mcp.yourdomain.com/terms
 
 ## Developer identity
 
@@ -62,21 +62,21 @@ Use **Universal** for the MCP server URL. The backend is designed so one fixed p
 
 MCP URL:
 
-`https://mcp-v2.digitonsdevelopment.com/mcp`
+`https://mcp.yourdomain.com/mcp`
 
 ### OAuth
 
 Authorization endpoint:
 
-`https://mcp-v2.digitonsdevelopment.com/authorize`
+`https://mcp.yourdomain.com/authorize`
 
 Token endpoint:
 
-`https://mcp-v2.digitonsdevelopment.com/token`
+`https://mcp.yourdomain.com/token`
 
 Protected resource:
 
-`https://mcp-v2.digitonsdevelopment.com/mcp`
+`https://mcp.yourdomain.com/mcp`
 
 PKCE:
 
@@ -86,7 +86,7 @@ PKCE:
 
 If the submission portal requests MCP domain verification, add the exact generated challenge token at:
 
-`https://mcp-v2.digitonsdevelopment.com/.well-known/openai-apps-challenge`
+`https://mcp.yourdomain.com/.well-known/openai-apps-challenge`
 
 The endpoint must return only the challenge token as plain text.
 
@@ -158,7 +158,7 @@ Verify these against the exact implementation before submission. If any tool has
 
 ### P3 — Create
 
-**Prompt:** Create a file named `chatgpt-mcp-test.txt` containing `Hello from Digitons Google Drive.`
+**Prompt:** Create a file named `chatgpt-mcp-test.txt` containing `Hello from Google Drive MCP.`
 
 **Expected:** `drive_create_file` creates the file in the user's Drive and returns its ID/name/mime type.
 
@@ -219,7 +219,7 @@ Do not use a personal production Google account for reviewer testing.
 
 ## Release notes
 
-Initial public submission of Digitons Google Drive. This release provides a universal remote MCP server for ChatGPT with per-user Google OAuth authorization, isolated credential storage, Drive search/read/write capabilities, Google Docs/Sheets/Slides operations, and restricted permission-management actions.
+Initial public submission of Google Drive MCP. This release provides a universal remote MCP server for ChatGPT with per-user Google OAuth authorization, isolated credential storage, Drive search/read/write capabilities, Google Docs/Sheets/Slides operations, and restricted permission-management actions.
 
 ## Countries / availability
 

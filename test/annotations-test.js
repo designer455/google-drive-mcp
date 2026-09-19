@@ -11,7 +11,7 @@ import http from 'node:http';
 const testDataDir = path.resolve(process.cwd(), 'data-test-annotations');
 process.env.NODE_ENV = 'test';
 process.env.DATA_DIR = testDataDir;
-process.env.ALLOWED_HOST = 'mcp-v2.digitonsdevelopment.com';
+process.env.ALLOWED_HOST = 'mcp.example.com';
 process.env.OPENAI_APPS_CHALLENGE_TOKEN = 'openai_challenge_token_abc123xyz';
 
 const { app } = await import('../src/server.js');
@@ -23,7 +23,7 @@ test.after(() => {
   }
 });
 
-function makeRequest({ method = 'GET', path: reqPath, host = 'mcp-v2.digitonsdevelopment.com', headers = {}, body = null }) {
+function makeRequest({ method = 'GET', path: reqPath, host = 'mcp.example.com', headers = {}, body = null }) {
   return new Promise((resolve, reject) => {
     const server = http.createServer(app);
     server.listen(0, '127.0.0.1', () => {

@@ -1199,9 +1199,9 @@ test('CORE-03: Advanced Search translates structured filters and escapes special
   const fDateNew = new Date('2026-06-01T00:00:00Z').toISOString();
 
   mockDriveState.files.push(
-    { id: 'search_f1', name: "O'Reilly 2026 Budget.pdf", mimeType: 'application/pdf', ownerEmail: 'audit@digitons.com', modifiedTime: fDateNew, createdTime: fDateOld, content: 'quarterly financial audit', parents: ['folder_finance'], trashed: false },
-    { id: 'search_f2', name: 'Vendor Contract.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ownerEmail: 'legal@digitons.com', modifiedTime: fDateOld, createdTime: fDateOld, content: 'quarterly procurement', parents: ['folder_legal'], trashed: false },
-    { id: 'search_f3', name: 'Old Strategy.txt', mimeType: 'text/plain', ownerEmail: 'ceo@digitons.com', modifiedTime: fDateOld, createdTime: fDateOld, content: 'confidential strategy', parents: ['folder_exec'], trashed: true }
+    { id: 'search_f1', name: "O'Reilly 2026 Budget.pdf", mimeType: 'application/pdf', ownerEmail: 'audit@example.com', modifiedTime: fDateNew, createdTime: fDateOld, content: 'quarterly financial audit', parents: ['folder_finance'], trashed: false },
+    { id: 'search_f2', name: 'Vendor Contract.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ownerEmail: 'legal@example.com', modifiedTime: fDateOld, createdTime: fDateOld, content: 'quarterly procurement', parents: ['folder_legal'], trashed: false },
+    { id: 'search_f3', name: 'Old Strategy.txt', mimeType: 'text/plain', ownerEmail: 'ceo@example.com', modifiedTime: fDateOld, createdTime: fDateOld, content: 'confidential strategy', parents: ['folder_exec'], trashed: true }
   );
 
   // 1. Exact filename match with single-quote escaping
@@ -1223,7 +1223,7 @@ test('CORE-03: Advanced Search translates structured filters and escapes special
   assert.ok(mimeData.files.some(f => f.id === 'search_f1'));
 
   // 4. Owner filter
-  const ownerRes = await executeMcpTool('drive_search', { owner_email: 'audit@digitons.com' }, mockUserSub);
+  const ownerRes = await executeMcpTool('drive_search', { owner_email: 'audit@example.com' }, mockUserSub);
   const ownerData = JSON.parse(ownerRes.content[0].text);
   assert.equal(ownerData.files.length, 1);
   assert.equal(ownerData.files[0].id, 'search_f1');

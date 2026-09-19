@@ -1,6 +1,6 @@
 /**
  * Public Informational Pages Module
- * Renders Privacy Policy, Terms of Service, Support, and Landing pages for digitons-google-drive-mcp-v2.
+ * Renders Privacy Policy, Terms of Service, Support, and Landing pages for google-drive-mcp.
  * Clean, modern, self-contained HTML accessible without authentication.
  */
 
@@ -15,19 +15,20 @@ function escapeHtml(str) {
 }
 
 function getBaseLayout({ title, activeNav, content, description }) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
-  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://www.digitonsdevelopment.com');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
+  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
+  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://github.com/designer455/google-drive-mcp');
+  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
 
   const pageTitle = activeNav === 'home'
-    ? 'Digitons Google Drive MCP V2'
-    : `${escapeHtml(title)} - Digitons Google Drive MCP V2`;
+    ? 'Google Drive MCP'
+    : `${escapeHtml(title)} - Google Drive MCP`;
 
   const metaDescription = description || (activeNav === 'home'
-    ? 'Digitons Google Drive MCP V2 is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'
-    : `${escapeHtml(title)} for Digitons Google Drive MCP V2.`);
+    ? 'Google Drive MCP is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'
+    : `${escapeHtml(title)} for Google Drive MCP.`);
 
-  const canonicalUrl = `https://mcp-v2.digitonsdevelopment.com${activeNav === 'home' ? '/' : '/' + activeNav}`;
+  const publicOrigin = process.env.MCP_PUBLIC_ORIGIN || 'https://mcp.example.com';
+  const canonicalUrl = `${publicOrigin}${activeNav === 'home' ? '/' : '/' + activeNav}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -41,7 +42,7 @@ function getBaseLayout({ title, activeNav, content, description }) {
   <meta property="og:description" content="${escapeHtml(metaDescription)}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="${canonicalUrl}">
-  <meta property="og:site_name" content="Digitons Google Drive MCP V2">
+  <meta property="og:site_name" content="Google Drive MCP">
   <style>
     :root {
       --bg: #0f172a;
@@ -266,7 +267,7 @@ function getBaseLayout({ title, activeNav, content, description }) {
   <header>
     <div class="nav-container">
       <a href="/" class="brand">
-        📁 Digitons Google Drive MCP V2
+        📁 Google Drive MCP
       </a>
       <nav>
         <a href="/" ${activeNav === 'home' ? 'class="active"' : ''}>Overview</a>
@@ -283,7 +284,7 @@ function getBaseLayout({ title, activeNav, content, description }) {
 
   <footer>
     <div class="footer-container">
-      <div>© ${new Date().getFullYear()} ${companyName}. All rights reserved. • Hosted on digitonsdevelopment.com</div>
+      <div>© ${new Date().getFullYear()} ${companyName}. All rights reserved.</div>
       <div class="footer-links">
         <a href="/">Overview</a>
         <a href="/support">Support</a>
@@ -301,9 +302,9 @@ function getBaseLayout({ title, activeNav, content, description }) {
  * GET / - Public landing / overview page
  */
 export function handleRootPage(req, res) {
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
-  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://www.digitonsdevelopment.com');
+  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
+  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
+  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://github.com/designer455/google-drive-mcp');
 
   const content = `
     <div class="card">
@@ -311,11 +312,11 @@ export function handleRootPage(req, res) {
         <span class="badge badge-success">Production Ready</span>
         <span style="font-size:13px;color:#94a3b8;">Universal Model Context Protocol Server</span>
       </div>
-      <h1>Digitons Google Drive MCP V2</h1>
+      <h1>Google Drive MCP</h1>
       <p class="page-subtitle">Multi-User Remote MCP Server for ChatGPT & OpenAI Agents</p>
 
       <p>
-        <strong>Digitons Google Drive MCP V2</strong> is a secure, production-ready remote Model Context Protocol (MCP) server developed and operated by <strong>${companyName}</strong>. It seamlessly connects ChatGPT and OpenAI Agents with the user's authorized Google Drive, allowing AI assistants to search, read, create, and organize files and Workspace documents directly from conversational prompts.
+        <strong>Google Drive MCP</strong> is a secure, production-ready remote Model Context Protocol (MCP) server operated by <strong>${companyName}</strong>. It seamlessly connects ChatGPT and OpenAI Agents with the user's authorized Google Drive, allowing AI assistants to search, read, create, and organize files and Workspace documents directly from conversational prompts.
       </p>
 
       <div class="info-box">
@@ -324,7 +325,7 @@ export function handleRootPage(req, res) {
 
       <h2>What the Application Does</h2>
       <p>
-        <strong>Digitons Google Drive MCP V2</strong> translates conversational instructions from ChatGPT and OpenAI Agents into authorized Google Drive API operations in real time:
+        <strong>Google Drive MCP</strong> translates conversational instructions from ChatGPT and OpenAI Agents into authorized Google Drive API operations in real time:
       </p>
       <ul>
         <li><strong>Search & Read:</strong> Query Google Drive with semantic keywords, browse folders, read plain-text and binary files, export Google Docs/Sheets/Slides, and inspect detailed file metadata.</li>
@@ -335,7 +336,7 @@ export function handleRootPage(req, res) {
 
       <h2>Verified Publisher & Hosting Information</h2>
       <p>
-        This service is officially developed and operated by <strong>${companyName}</strong>, hosted at <code>https://mcp-v2.digitonsdevelopment.com</code> under the verified parent domain <strong><a href="${companyWebsite}" target="_blank" rel="noopener" style="color:#38bdf8;">digitonsdevelopment.com</a></strong>. All OAuth 2.0 authorizations are conducted directly and securely between your client, this server, and Google APIs.
+        This service is officially operated by <strong>${companyName}</strong>, hosted under <strong><a href="${companyWebsite}" target="_blank" rel="noopener" style="color:#38bdf8;">${companyWebsite}</a></strong>. All OAuth 2.0 authorizations are conducted directly and securely between your client, this server, and Google APIs.
       </p>
 
       <h2>Quick Links & Legal Documentation</h2>
@@ -371,8 +372,8 @@ export function handleRootPage(req, res) {
  * GET /privacy - Public Privacy Policy page
  */
 export function handlePrivacyPage(req, res) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
+  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
+  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
 
   const content = `
     <div class="card">
@@ -381,11 +382,11 @@ export function handlePrivacyPage(req, res) {
         <span style="font-size:13px;color:#94a3b8;">Last Updated: September 2026</span>
       </div>
       <h1>Privacy Policy</h1>
-      <p class="page-subtitle">How Digitons Google Drive MCP V2 handles and protects your data</p>
+      <p class="page-subtitle">How Google Drive MCP handles and protects your data</p>
 
       <h2>1. Overview & Service Identity</h2>
       <p>
-        This Privacy Policy explains how <strong>Digitons Google Drive MCP V2</strong> ("the Service"), developed and operated by <strong>${companyName}</strong>, collects, processes, stores, and protects user data when connecting ChatGPT and OpenAI Agents to Google Drive.
+        This Privacy Policy explains how <strong>Google Drive MCP</strong> ("the Service"), operated by <strong>${companyName}</strong>, collects, processes, stores, and protects user data when connecting ChatGPT and OpenAI Agents to Google Drive.
       </p>
 
       <h2>2. Multi-User Architecture & Zero Shared Credentials</h2>
@@ -434,7 +435,7 @@ export function handlePrivacyPage(req, res) {
         <li><strong>Storage Classification:</strong> Data is protected via operating system access controls, filesystem permissions, and process isolation. Data files are not encrypted at rest.</li>
         <li><strong>One-Time Link Tokens:</strong> Linking your Google account uses cryptographically random link tokens (<code>glink_...</code>). Only a SHA-256 hash of the token is stored on the server. Tokens expire in 10 minutes (<code>OAUTH_GOOGLE_LINK_EXPIRY_SECONDS=600</code>) and are atomically deleted upon first use to prevent replay.</li>
         <li><strong>No Tokens in URLs:</strong> MCP Bearer access tokens are never placed into browser URLs, query parameters, HTML, or responses.</li>
-        <li><strong>Host Header Validation:</strong> Strict host verification enforces communication through <code>mcp-v2.digitonsdevelopment.com</code>.</li>
+        <li><strong>Host Header Validation:</strong> Strict host verification enforces communication through authorized domain headers.</li>
       </ul>
 
       <h2>6. Audit Logging & Token Redaction</h2>
@@ -486,8 +487,8 @@ export function handlePrivacyPage(req, res) {
  * GET /terms - Public Terms of Service page
  */
 export function handleTermsPage(req, res) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
+  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
+  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
 
   const content = `
     <div class="card">
@@ -496,11 +497,11 @@ export function handleTermsPage(req, res) {
         <span style="font-size:13px;color:#94a3b8;">Last Updated: September 2026</span>
       </div>
       <h1>Terms of Service</h1>
-      <p class="page-subtitle">Terms governing the use of Digitons Google Drive MCP V2</p>
+      <p class="page-subtitle">Terms governing the use of Google Drive MCP</p>
 
       <h2>1. Acceptance of Terms</h2>
       <p>
-        By connecting to or using <strong>Digitons Google Drive MCP V2</strong> ("the Service"), provided by <strong>${companyName}</strong> ("we," "us," or "our"), you agree to be bound by these Terms of Service. If you do not agree to these Terms, do not connect or use the Service.
+        By connecting to or using <strong>Google Drive MCP</strong> ("the Service"), provided by <strong>${companyName}</strong> ("we," "us," or "our"), you agree to be bound by these Terms of Service. If you do not agree to these Terms, do not connect or use the Service.
       </p>
 
       <h2>2. Description of Service</h2>
@@ -581,24 +582,24 @@ export function handleTermsPage(req, res) {
  * GET /support - Public Support and Help Center page
  */
 export function handleSupportPage(req, res) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Digitons Development');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@digitonsdevelopment.com');
+  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
+  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
 
   const content = `
     <div class="card">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span class="badge badge-success">Help Center</span>
-        <span style="font-size:13px;color:#94a3b8;">Digitons Google Drive MCP V2</span>
+        <span style="font-size:13px;color:#94a3b8;">Google Drive MCP</span>
       </div>
       <h1>Support & Help Center</h1>
-      <p class="page-subtitle">Guides, troubleshooting, and contact for Digitons Google Drive MCP V2</p>
+      <p class="page-subtitle">Guides, troubleshooting, and contact for Google Drive MCP</p>
 
       <h2>How to Connect Your Google Drive</h2>
       <div class="step-card">
         <div class="step-number">Step 1</div>
         <h3>Install the Connector</h3>
         <p>Add the MCP server URL in ChatGPT (<strong>Settings → Connected Apps / MCP</strong>):</p>
-        <code>https://mcp-v2.digitonsdevelopment.com/mcp</code>
+        <code>https://mcp.example.com/mcp</code>
       </div>
 
       <div class="step-card">
@@ -612,7 +613,7 @@ export function handleSupportPage(req, res) {
         <div class="step-number">Step 3</div>
         <h3>Open the Secure One-Time Link</h3>
         <p>ChatGPT will reply with a secure connection link unique to your session:</p>
-        <code>https://mcp-v2.digitonsdevelopment.com/auth/google/link?code=glink_...</code>
+        <code>https://mcp.example.com/auth/google/link?code=glink_...</code>
         <p style="font-size:13px;color:#94a3b8;margin-top:8px;">This link is single-use, expires in 10 minutes, and binds your Google account directly to your ChatGPT identity.</p>
       </div>
 
@@ -654,7 +655,7 @@ export function handleSupportPage(req, res) {
       <p>You can disconnect your Google Drive at any time through either of these methods:</p>
       <ul>
         <li><strong>Through ChatGPT:</strong> Ask ChatGPT to disconnect your Google Drive account, which calls <code>POST /auth/google/disconnect</code>. This revokes the tokens with Google and immediately purges local credentials.</li>
-        <li><strong>Through Google Account:</strong> Visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" style="color:#38bdf8;">Google Third-Party Apps & Services</a> and click <em>Remove Access</em> for Digitons Google Drive MCP V2.</li>
+        <li><strong>Through Google Account:</strong> Visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" style="color:#38bdf8;">Google Third-Party Apps & Services</a> and click <em>Remove Access</em> for Google Drive MCP.</li>
       </ul>
 
       <h2>Contact Support</h2>

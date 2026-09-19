@@ -12,7 +12,7 @@ const testDataDir = path.resolve(process.cwd(), 'data-test-security');
 process.env.NODE_ENV = 'production'; // Test in production mode for strict host checking
 process.env.MCP_NO_LISTEN = 'true';
 process.env.DATA_DIR = testDataDir;
-process.env.ALLOWED_HOST = 'mcp-v2.digitonsdevelopment.com';
+process.env.ALLOWED_HOST = 'mcp.example.com';
 
 const { app } = await import('../src/server.js');
 const {
@@ -31,7 +31,7 @@ test.after(() => {
   }
 });
 
-function makeRequest({ method = 'GET', path: reqPath, host = 'mcp-v2.digitonsdevelopment.com', headers = {}, body = null }) {
+function makeRequest({ method = 'GET', path: reqPath, host = 'mcp.example.com', headers = {}, body = null }) {
   return new Promise((resolve, reject) => {
     const server = http.createServer(app);
     server.listen(0, '127.0.0.1', () => {
@@ -221,7 +221,7 @@ test('7. Host Header Validation blocks unexpected hosts in production', async ()
   // Allowed host succeeds
   const allowedRes = await makeRequest({
     path: '/.well-known/oauth-authorization-server',
-    host: 'mcp-v2.digitonsdevelopment.com'
+    host: 'mcp.example.com'
   });
   assert.equal(allowedRes.status, 200);
 });

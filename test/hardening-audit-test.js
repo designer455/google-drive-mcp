@@ -14,9 +14,9 @@ const testDataDir = path.resolve(process.cwd(), 'data-test-hardening');
 process.env.NODE_ENV = 'production'; // Production mode to test strict host validation and error sanitization
 process.env.MCP_NO_LISTEN = 'true';
 process.env.DATA_DIR = testDataDir;
-process.env.ALLOWED_HOST = 'mcp-v2.digitonsdevelopment.com';
-process.env.MCP_PUBLIC_ORIGIN = 'https://mcp-v2.digitonsdevelopment.com';
-process.env.MCP_PUBLIC_URL = 'https://mcp-v2.digitonsdevelopment.com/mcp';
+process.env.ALLOWED_HOST = 'mcp.example.com';
+process.env.MCP_PUBLIC_ORIGIN = 'https://mcp.example.com';
+process.env.MCP_PUBLIC_URL = 'https://mcp.example.com/mcp';
 process.env.CHATGPT_OAUTH_CLIENT_ID = 'hardening-test-client';
 process.env.CHATGPT_OAUTH_CLIENT_SECRET = 'hardening-test-secret';
 process.env.CHATGPT_OAUTH_REDIRECT_URI = 'https://chatgpt.com/connector/oauth/callback';
@@ -53,7 +53,7 @@ function makeRequest({ method = 'GET', path: reqPath, headers = {}, body = null 
       const payload = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
 
       const reqHeaders = {
-        Host: 'mcp-v2.digitonsdevelopment.com',
+        Host: 'mcp.example.com',
         ...headers
       };
 

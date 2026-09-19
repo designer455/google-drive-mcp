@@ -12,9 +12,9 @@ import fs from 'node:fs';
 const testDataDir = path.resolve(process.cwd(), 'data-test-oauth');
 process.env.NODE_ENV = 'test';
 process.env.DATA_DIR = testDataDir;
-process.env.ALLOWED_HOST = 'mcp-v2.digitonsdevelopment.com';
-process.env.MCP_PUBLIC_ORIGIN = 'https://mcp-v2.digitonsdevelopment.com';
-process.env.MCP_PUBLIC_URL = 'https://mcp-v2.digitonsdevelopment.com/mcp';
+process.env.ALLOWED_HOST = 'mcp.example.com';
+process.env.MCP_PUBLIC_ORIGIN = 'https://mcp.example.com';
+process.env.MCP_PUBLIC_URL = 'https://mcp.example.com/mcp';
 process.env.CHATGPT_OAUTH_CLIENT_ID = 'test-chatgpt-client';
 process.env.CHATGPT_OAUTH_CLIENT_SECRET = 'test-chatgpt-secret';
 process.env.CHATGPT_OAUTH_REDIRECT_URI = 'https://chatgpt.com/aip/callback';
@@ -41,7 +41,7 @@ function makeRequest({ method = 'GET', path: reqPath, headers = {}, body = null 
       const payload = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
 
       const reqHeaders = {
-        Host: 'mcp-v2.digitonsdevelopment.com',
+        Host: 'mcp.example.com',
         ...headers
       };
 
@@ -92,9 +92,9 @@ test('1. OAuth Discovery: GET /.well-known/oauth-authorization-server', async ()
   assert.equal(res.headers['cache-control'], 'no-store, no-cache, must-revalidate');
   assert.equal(res.headers['pragma'], 'no-cache');
   assert.ok(res.json);
-  assert.equal(res.json.issuer, 'https://mcp-v2.digitonsdevelopment.com');
-  assert.equal(res.json.authorization_endpoint, 'https://mcp-v2.digitonsdevelopment.com/authorize');
-  assert.equal(res.json.token_endpoint, 'https://mcp-v2.digitonsdevelopment.com/token');
+  assert.equal(res.json.issuer, 'https://mcp.example.com');
+  assert.equal(res.json.authorization_endpoint, 'https://mcp.example.com/authorize');
+  assert.equal(res.json.token_endpoint, 'https://mcp.example.com/token');
   assert.deepEqual(res.json.code_challenge_methods_supported, ['S256']);
   assert.ok(res.json.grant_types_supported.includes('authorization_code'));
   assert.ok(res.json.grant_types_supported.includes('refresh_token'));
@@ -112,8 +112,8 @@ test('2. Protected Resource Metadata: GET /.well-known/oauth-protected-resource'
   assert.equal(res.headers['cache-control'], 'no-store, no-cache, must-revalidate');
   assert.equal(res.headers['pragma'], 'no-cache');
   assert.ok(res.json);
-  assert.equal(res.json.resource, 'https://mcp-v2.digitonsdevelopment.com/mcp');
-  assert.deepEqual(res.json.authorization_servers, ['https://mcp-v2.digitonsdevelopment.com']);
+  assert.equal(res.json.resource, 'https://mcp.example.com/mcp');
+  assert.deepEqual(res.json.authorization_servers, ['https://mcp.example.com']);
   assert.deepEqual(res.json.bearer_methods_supported, ['header']);
 });
 

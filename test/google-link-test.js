@@ -12,11 +12,11 @@ import http from 'node:http';
 const testDataDir = path.resolve(process.cwd(), 'data-test-google-link');
 process.env.NODE_ENV = 'test';
 process.env.DATA_DIR = testDataDir;
-process.env.ALLOWED_HOST = 'mcp-v2.digitonsdevelopment.com';
-process.env.MCP_PUBLIC_ORIGIN = 'https://mcp-v2.digitonsdevelopment.com';
+process.env.ALLOWED_HOST = 'mcp.example.com';
+process.env.MCP_PUBLIC_ORIGIN = 'https://mcp.example.com';
 process.env.GOOGLE_CLIENT_ID = 'mock-google-client-id';
 process.env.GOOGLE_CLIENT_SECRET = 'mock-google-client-secret';
-process.env.GOOGLE_REDIRECT_URI = 'https://mcp-v2.digitonsdevelopment.com/oauth2callback';
+process.env.GOOGLE_REDIRECT_URI = 'https://mcp.example.com/oauth2callback';
 
 const { app } = await import('../src/server.js');
 const {
@@ -49,7 +49,7 @@ function makeRequest({ method = 'GET', path: reqPath, headers = {}, body = null 
       const payload = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
 
       const reqHeaders = {
-        Host: 'mcp-v2.digitonsdevelopment.com',
+        Host: 'mcp.example.com',
         ...headers
       };
 
@@ -90,7 +90,7 @@ test('1. Authenticated user can create Google link token', async () => {
   const linkUrl = await createGoogleLinkToken(userSub);
 
   assert.ok(typeof linkUrl === 'string');
-  assert.ok(linkUrl.startsWith('https://mcp-v2.digitonsdevelopment.com/auth/google/link?code=glink_'));
+  assert.ok(linkUrl.startsWith('https://mcp.example.com/auth/google/link?code=glink_'));
 });
 
 test('2. Link token maps to correct userSub', async () => {
@@ -212,7 +212,7 @@ test('9. GOOGLE_NOT_CONNECTED produces a one-time connection link', async () => 
   const errorText = res.content[0].text;
 
   assert.ok(errorText.includes('Google Drive is not connected for your account'));
-  assert.ok(errorText.includes('https://mcp-v2.digitonsdevelopment.com/auth/google/link?code=glink_'));
+  assert.ok(errorText.includes('https://mcp.example.com/auth/google/link?code=glink_'));
   assert.ok(errorText.includes('This link expires in 10 minutes and can be used once.'));
   assert.ok(errorText.includes('connects your personal Google account'));
 });
