@@ -239,6 +239,16 @@ export async function handleGoogleOAuthCallback(req, res) {
     // Persist tokens securely under the user's opaque subject
     await setUserGoogleTokens(userSub, tokens, accountInfo);
 
+    // Log permanent refresh token for Vercel deployment (Solution 1)
+    if (tokens.refresh_token) {
+      console.log('\n======================================================');
+      console.log('⚡ [Google Drive MCP] PERMANENT REFRESH TOKEN (Solution 1):');
+      console.log(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
+      console.log('Set this in your Vercel Project Settings -> Environment Variables');
+      console.log('to make this connection permanent across all serverless cold-starts.');
+      console.log('======================================================\n');
+    }
+
     auditLog({
       userSub,
       action: 'auth.google_connect',
@@ -246,7 +256,7 @@ export async function handleGoogleOAuthCallback(req, res) {
       details: { email: accountInfo.email }
     });
 
-    // Render clean success page
+    // Render clean success page with copyable Vercel token instructions
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -256,12 +266,18 @@ export async function handleGoogleOAuthCallback(req, res) {
   <title>Google Drive Connected</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-    .card { background: #1e293b; border-radius: 12px; padding: 32px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; text-align: center; }
+    .card { background: #1e293b; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; text-align: center; }
     .icon { font-size: 48px; margin-bottom: 16px; }
     h1 { font-size: 22px; margin-top: 0; margin-bottom: 8px; color: #34d399; }
     p { font-size: 14px; color: #94a3b8; line-height: 1.5; margin-bottom: 20px; }
-    .user-info { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-bottom: 24px; font-size: 13px; color: #cbd5e1; }
-    .footer { font-size: 12px; color: #64748b; }
+    .user-info { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 13px; color: #cbd5e1; }
+    .token-box { background: #090d16; border: 1px solid #3b82f6; border-radius: 8px; padding: 14px; text-align: left; margin-bottom: 20px; }
+    .token-title { font-size: 12px; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .token-desc { font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 10px; }
+    .code-block { background: #020617; padding: 10px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; word-break: break-all; color: #38bdf8; border: 1px solid #1e293b; user-select: all; cursor: text; }
+    .copy-btn { margin-top: 8px; font-size: 11px; padding: 5px 10px; background: #2563eb; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+    .copy-btn:hover { background: #1d4ed8; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 16px; }
   </style>
 </head>
 <body>
@@ -274,6 +290,18 @@ export async function handleGoogleOAuthCallback(req, res) {
       <div>Connected Account: <strong>${escapeHtml(accountInfo.email || 'Google Account')}</strong></div>
       ${accountInfo.displayName ? `<div style="margin-top:4px;color:#94a3b8;">${escapeHtml(accountInfo.displayName)}</div>` : ''}
     </div>
+
+    ${tokens.refresh_token ? `
+    <div class="token-box">
+      <div class="token-title">⚡ Permanent Vercel Connection (Solution 1)</div>
+      <div class="token-desc">
+        Serverless functions reset temporary files periodically. To make this connection <strong>100% permanent</strong> so it never disconnects:
+      </div>
+      <div class="code-block" id="tokenCode">GOOGLE_REFRESH_TOKEN=${escapeHtml(tokens.refresh_token)}</div>
+      <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('tokenCode').innerText); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy Token', 2000)">Copy Token</button>
+      <div style="font-size: 10px; color: #64748b; margin-top: 6px;">Add this to Vercel Project Settings &rarr; Environment Variables.</div>
+    </div>
+    ` : ''}
 
     <p style="color:#e2e8f0;font-weight:500;">You can now close this tab and return to ChatGPT.</p>
     <div class="footer">Google Drive MCP</div>
@@ -298,7 +326,7 @@ export async function handleGoogleAuthStatus(req, res) {
   const userSub = req.userSub;
   const userRecord = await getUserGoogleRecord(userSub);
 
-  if (!userRecord || !userRecord.google || !userRecord.google.access_token) {
+  if (!userRecord || !userRecord.google || (!userRecord.google.access_token && !userRecord.google.refresh_token)) {
     return res.json({ connected: false });
   }
 

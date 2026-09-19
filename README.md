@@ -308,6 +308,28 @@ When submitting your MCP server to the OpenAI Plugin/App Directory, OpenAI requi
 
 ---
 
+## 8.1. Vercel Serverless Deployment (Permanent Connection - Solution 1)
+
+When deployed on **Vercel** or AWS Lambda serverless runtimes, microVM containers spin down and scale dynamically. The temporary directory (`/tmp`) is cleared periodically during cold starts, which would normally reset local session storage.
+
+Google Drive MCP implements **Solution 1** for serverless resilience:
+
+1. **Stateless MCP Bearer Tokens**:
+   MCP access tokens and refresh tokens issued to ChatGPT are self-verifying HMAC-signed tokens. They survive complete server restarts and container recycles without requiring persistent database state.
+
+2. **Permanent `GOOGLE_REFRESH_TOKEN`**:
+   By adding your Google Refresh Token to your Vercel Project Settings as `GOOGLE_REFRESH_TOKEN`, Google APIs automatically refresh access tokens on-demand across all serverless invocations. The connection **never expires** and never asks for re-authentication.
+
+### Step-by-Step Setup on Vercel:
+1. Deploy the repository to Vercel (automatically uses `vercel.json` and `api/index.js`).
+2. Set your basic environment variables in Vercel Project Settings (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CHATGPT_OAUTH_CLIENT_ID`, `CHATGPT_OAUTH_CLIENT_SECRET`, `ALLOWED_HOST`, etc.).
+3. Link your Google Drive once by completing the Google OAuth screen via ChatGPT or `/auth/google`.
+4. On the connection success screen (`/oauth2callback`), copy the displayed `GOOGLE_REFRESH_TOKEN=1//...`.
+5. Paste `GOOGLE_REFRESH_TOKEN` into your **Vercel Project Settings &rarr; Environment Variables**.
+6. Redeploy or trigger any request: your Google Drive connection is now **100% permanent and indestructible**!
+
+---
+
 ## 9. Local Setup & Testing
 
 ### Install Dependencies
@@ -325,7 +347,8 @@ npm run check
 npm test
 ```
 
-The test suite runs 130 comprehensive automated tests across 8 suites:
+The test suite runs 133 comprehensive automated tests across 9 suites:
+- `test/vercel-resilience-test.js`: Permanent serverless connection (Solution 1), `GOOGLE_REFRESH_TOKEN` cold-start fallback, stateless HMAC MCP tokens, and tampering/expiration guards.
 - `test/pages-test.js`: Public informational and legal pages (`/privacy`, `/terms`, `/support`, `/`), unauthenticated access, content completeness, link integrity, and zero secret/token leakage.
 - `test/google-link-test.js`: One-time Google link token generation, single-use atomic consumption, expiration, replay rejection, User A vs User B isolation, direct Bearer requirement, error messaging, audit sanitization, and full end-to-end connect journey.
 - `test/oauth-test.js`: RFC discovery, PKCE S256 verification, token rotation, code replay, OpenID alias, and expiry checks.

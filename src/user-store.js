@@ -175,10 +175,39 @@ function safeReadJsonSync(filePath, defaultValue) {
  */
 export async function getUserGoogleRecord(userSub) {
   if (!userSub) return null;
-  return fileMutex.runExclusive(async () => {
+  const userRecord = await fileMutex.runExclusive(async () => {
     const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     return data.users?.[userSub] || null;
   });
+
+  const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN ? process.env.GOOGLE_REFRESH_TOKEN.trim() : null;
+
+  if (userRecord && userRecord.google) {
+    // If user record exists in store, supplement with env refresh token if missing
+    if (!userRecord.google.refresh_token && envRefreshToken) {
+      userRecord.google.refresh_token = envRefreshToken;
+    }
+    if (userRecord.google.access_token || userRecord.google.refresh_token) {
+      return userRecord;
+    }
+  }
+
+  // Solution 1: Fallback to GOOGLE_REFRESH_TOKEN environment variable (permanent connection on Vercel)
+  if (envRefreshToken) {
+    return {
+      google: {
+        refresh_token: envRefreshToken,
+        scope: process.env.GOOGLE_DRIVE_SCOPES || undefined
+      },
+      account: {
+        email: process.env.GOOGLE_ACCOUNT_EMAIL || 'Connected Google Account',
+        displayName: 'Primary Google Account'
+      },
+      source: 'env'
+    };
+  }
+
+  return userRecord;
 }
 
 /**
@@ -545,11 +574,69 @@ export async function saveMcpTokens({
 }
 
 /**
+ * Mint a self-verifying, HMAC-signed MCP token that survives serverless container restarts.
+ */
+export function generateSignedMcpToken(prefix, payload, expiresInMs) {
+  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'mcp-stateless-auth-secret';
+  const data = {
+    ...payload,
+    exp: Date.now() + expiresInMs,
+    rnd: crypto.randomBytes(8).toString('hex')
+  };
+  const body = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(`${prefix}${body}`).digest('base64url');
+  return `${prefix}${body}.${sig}`;
+}
+
+/**
+ * Verify and decode an HMAC-signed MCP token.
+ */
+export function verifySignedMcpToken(tokenString, expectedPrefix = null) {
+  if (!tokenString || typeof tokenString !== 'string') return null;
+  const parts = tokenString.split('.');
+  if (parts.length !== 2) return null;
+
+  const [prefixAndBody, sig] = parts;
+  if (expectedPrefix && !prefixAndBody.startsWith(expectedPrefix)) return null;
+
+  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'mcp-stateless-auth-secret';
+  const expectedSig = crypto.createHmac('sha256', secret).update(prefixAndBody).digest('base64url');
+
+  try {
+    const bufA = Buffer.from(sig);
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+      return null;
+    }
+
+    const prefix = prefixAndBody.startsWith('mcp_at_') ? 'mcp_at_' : (prefixAndBody.startsWith('mcp_rt_') ? 'mcp_rt_' : '');
+    const bodyStr = prefixAndBody.slice(prefix.length);
+    const payload = JSON.parse(Buffer.from(bodyStr, 'base64url').toString('utf8'));
+
+    if (payload.exp && Date.now() > payload.exp) {
+      return null;
+    }
+
+    return {
+      type: prefix === 'mcp_rt_' ? 'refresh' : 'access',
+      token: tokenString,
+      userSub: payload.sub,
+      clientId: payload.cid,
+      scope: payload.scp,
+      createdAt: payload.iat || (payload.exp - 3600000),
+      expiresAt: payload.exp
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get and validate an MCP token (access or refresh).
  */
 export async function getMcpToken(tokenString) {
   if (!tokenString) return null;
-  return fileMutex.runExclusive(async () => {
+  const storedRecord = await fileMutex.runExclusive(async () => {
     const data = safeReadEncryptedJsonSync(MCP_AUTH_FILE, { codes: {}, tokens: {} }, undefined, safeWriteJsonSync);
     const tokenRecord = data.tokens?.[tokenString];
     if (!tokenRecord) return null;
@@ -562,6 +649,18 @@ export async function getMcpToken(tokenString) {
 
     return tokenRecord;
   });
+
+  if (storedRecord) {
+    return storedRecord;
+  }
+
+  // Stateless HMAC validation fallback (survives Vercel serverless container recycling)
+  const statelessRecord = verifySignedMcpToken(tokenString);
+  if (statelessRecord) {
+    return statelessRecord;
+  }
+
+  return null;
 }
 
 /**

@@ -9,9 +9,13 @@ import {
   consumeMcpAuthCode,
   saveMcpTokens,
   getMcpToken,
-  revokeMcpToken
+  revokeMcpToken,
+  generateSignedMcpToken,
+  verifySignedMcpToken
 } from './user-store.js';
 import { auditLog } from './audit.js';
+
+export { generateSignedMcpToken, verifySignedMcpToken };
 
 // Base URLs
 export function getPublicOrigin() {
@@ -447,11 +451,19 @@ export async function handlePostToken(req, res) {
       return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
     }
 
-    // Mint access token and refresh token
-    const accessToken = `mcp_at_${crypto.randomBytes(32).toString('hex')}`;
-    const refreshToken = `mcp_rt_${crypto.randomBytes(32).toString('hex')}`;
+    // Mint access token and refresh token (stateless signed tokens for serverless resilience)
     const accessExpiresIn = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS, 10) || 3600;
     const refreshExpiresIn = parseInt(process.env.REFRESH_TOKEN_EXPIRY_SECONDS, 10) || 2592000;
+    const accessToken = generateSignedMcpToken(
+      'mcp_at_',
+      { sub: codeRecord.userSub, cid: codeRecord.clientId, scp: codeRecord.scope },
+      accessExpiresIn * 1000
+    );
+    const refreshToken = generateSignedMcpToken(
+      'mcp_rt_',
+      { sub: codeRecord.userSub, cid: codeRecord.clientId, scp: codeRecord.scope },
+      refreshExpiresIn * 1000
+    );
 
     await saveMcpTokens({
       accessToken,
@@ -488,12 +500,20 @@ export async function handlePostToken(req, res) {
       return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired refresh token' });
     }
 
-    // Rotate refresh token and issue new access token
+    // Rotate refresh token and issue new access token (stateless signed tokens for serverless resilience)
     await revokeMcpToken(refresh_token);
-    const newAccessToken = `mcp_at_${crypto.randomBytes(32).toString('hex')}`;
-    const newRefreshToken = `mcp_rt_${crypto.randomBytes(32).toString('hex')}`;
     const accessExpiresIn = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS, 10) || 3600;
     const refreshExpiresIn = parseInt(process.env.REFRESH_TOKEN_EXPIRY_SECONDS, 10) || 2592000;
+    const newAccessToken = generateSignedMcpToken(
+      'mcp_at_',
+      { sub: tokenRecord.userSub, cid: tokenRecord.clientId, scp: tokenRecord.scope },
+      accessExpiresIn * 1000
+    );
+    const newRefreshToken = generateSignedMcpToken(
+      'mcp_rt_',
+      { sub: tokenRecord.userSub, cid: tokenRecord.clientId, scp: tokenRecord.scope },
+      refreshExpiresIn * 1000
+    );
 
     await saveMcpTokens({
       accessToken: newAccessToken,

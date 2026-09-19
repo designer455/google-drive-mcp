@@ -159,7 +159,7 @@ export async function getGoogleAuthClient(userSub) {
   // 1. Load credentials for THAT user only
   const userRecord = await getUserGoogleRecord(userSub);
 
-  if (!userRecord || !userRecord.google || !userRecord.google.access_token) {
+  if (!userRecord || !userRecord.google || (!userRecord.google.access_token && !userRecord.google.refresh_token)) {
     const error = new Error('Google Drive is not connected for this account.');
     error.code = 'GOOGLE_NOT_CONNECTED';
     throw error;

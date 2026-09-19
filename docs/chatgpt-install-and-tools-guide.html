@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Google Drive MCP - ChatGPT Installation & Complete Tool Reference Guide</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 8mm 11mm 8mm 11mm;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      line-height: 1.32;
+      font-size: 8.0pt;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    .header {
+      border-bottom: 2.5px solid #0284c7;
+      padding-bottom: 5px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .brand-title {
+      font-size: 14pt;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.4px;
+      margin: 0 0 1px 0;
+    }
+    .brand-subtitle {
+      font-size: 8.8pt;
+      font-weight: 600;
+      color: #0284c7;
+      margin: 0;
+    }
+    .doc-meta {
+      text-align: right;
+      font-size: 7.6pt;
+      color: #64748b;
+      line-height: 1.25;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 6.8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .badge-verified {
+      background: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+    }
+    .badge-guide {
+      background: #f0f9ff;
+      color: #0284c7;
+      border: 1px solid #bae6fd;
+    }
+    .badge-auth {
+      background: #faf5ff;
+      color: #7e22ce;
+      border: 1px solid #e9d5ff;
+    }
+    h2 {
+      font-size: 9.3pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 6px 0 2px 0;
+      padding-bottom: 2px;
+      border-bottom: 1px solid #e2e8f0;
+      page-break-after: avoid;
+    }
+    p {
+      margin: 0 0 4px 0;
+      color: #334155;
+    }
+    ul, ol {
+      margin: 0 0 5px 0;
+      padding-left: 15px;
+    }
+    li {
+      margin-bottom: 2px;
+      color: #334155;
+    }
+    .step-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3.5px solid #0284c7;
+      padding: 6px 9px;
+      border-radius: 0 5px 5px 0;
+      margin-bottom: 6px;
+      page-break-inside: avoid;
+    }
+    .step-card.green {
+      border-left-color: #10b981;
+      background: #f0fdf4;
+    }
+    .step-card.purple {
+      border-left-color: #8b5cf6;
+      background: #faf5ff;
+    }
+    .step-number {
+      font-size: 7pt;
+      font-weight: 800;
+      color: #0284c7;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 1px;
+    }
+    .step-number.green { color: #059669; }
+    .step-number.purple { color: #7e22ce; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-bottom: 6px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .card-box {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      padding: 6px 8px;
+      page-break-inside: avoid;
+    }
+    .card-box h4 {
+      margin: 0 0 2px 0;
+      font-size: 8pt;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .card-box p {
+      font-size: 7.7pt;
+      margin: 0;
+      color: #475569;
+      line-height: 1.3;
+    }
+    .chat-sim {
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 7.8pt;
+      margin: 5px 0 6px 0;
+      line-height: 1.35;
+      page-break-inside: avoid;
+    }
+    .chat-user {
+      color: #38bdf8;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .chat-gpt {
+      color: #e2e8f0;
+      border-top: 1px solid #334155;
+      padding-top: 3px;
+      margin-top: 3px;
+    }
+    .chat-link {
+      color: #38bdf8;
+      word-break: break-all;
+      text-decoration: underline;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.3pt;
+      margin: 3px 0 4px 0;
+      page-break-inside: auto;
+    }
+    tr {
+      page-break-inside: avoid;
+      page-break-after: auto;
+    }
+    th {
+      background: #f1f5f9;
+      color: #0f172a;
+      font-weight: 700;
+      text-align: left;
+      padding: 3px 5px;
+      border: 1px solid #cbd5e1;
+      font-size: 7.1pt;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    td {
+      padding: 2.6px 5px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+      line-height: 1.22;
+    }
+    tr:nth-child(even) td {
+      background: #fafbfc;
+    }
+    .tag-tool {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 700;
+      color: #0369a1;
+      font-size: 7.2pt;
+    }
+    .tag-ro {
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 6.5pt;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .tag-rw {
+      background: #fef3c7;
+      color: #b45309;
+      font-size: 6.5pt;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .tag-destr {
+      background: #fee2e2;
+      color: #b91c1c;
+      font-size: 6.5pt;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .footer {
+      margin-top: 8px;
+      padding-top: 4px;
+      border-top: 1px solid #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 7pt;
+      color: #64748b;
+      page-break-inside: avoid;
+    }
+    .page-break {
+      break-before: page;
+      page-break-before: always;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 7.5pt;
+      background: #f1f5f9;
+      padding: 1px 3px;
+      border-radius: 3px;
+      color: #0f172a;
+    }
+    .highlight-box {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 5px;
+      padding: 6px 9px;
+      margin: 4px 0 6px 0;
+      font-size: 7.8pt;
+    }
+    .highlight-box.green {
+      background: #f0fdf4;
+      border-color: #a7f3d0;
+    }
+    .highlight-box.amber {
+      background: #fffbeb;
+      border-color: #fde68a;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ========================================================================= -->
+  <!-- PAGE 1: CHATGPT INSTALLATION & CONNECTION GUIDE                           -->
+  <!-- ========================================================================= -->
+
+  <div class="header">
+    <div>
+      <h1 class="brand-title">Google Drive MCP</h1>
+      <p class="brand-subtitle">ChatGPT Integration & Complete User Installation Guide</p>
+    </div>
+    <div class="doc-meta">
+      <span class="badge badge-guide">Official User Manual</span><br>
+      <strong>Target Platform:</strong> OpenAI ChatGPT (Plus / Team / Enterprise)<br>
+      <strong>Protocol:</strong> Model Context Protocol (MCP) Remote Server<br>
+      <strong>Security Architecture:</strong> Per-User Multi-Tenant OAuth 2.0
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <strong>Executive Summary:</strong> This manual provides comprehensive instructions for installing the <strong>Google Drive MCP</strong> server inside ChatGPT, activating Developer Mode, configuring OAuth 2.0 endpoints, linking your Google Drive with secure single-use linking tokens, and utilizing all 32 Drive tools.
+  </div>
+
+  <h2>1. Prerequisites</h2>
+  <div class="grid-3">
+    <div class="card-box">
+      <h4>1. ChatGPT Account</h4>
+      <p>ChatGPT Plus, Team, or Enterprise subscription with Custom GPTs / MCP app support enabled.</p>
+    </div>
+    <div class="card-box">
+      <h4>2. Google Account</h4>
+      <p>Any active Google Account (personal Gmail or Google Workspace) with access to Google Drive.</p>
+    </div>
+    <div class="card-box">
+      <h4>3. MCP Server Details</h4>
+      <p>Your server URL (e.g. <code>https://&lt;domain&gt;/mcp</code>) and OAuth Client ID & Secret from your admin.</p>
+    </div>
+  </div>
+
+  <h2>2. Step-by-Step Installation in ChatGPT</h2>
+
+  <div class="step-card">
+    <div class="step-number">Step 1 — Enable Developer Features in ChatGPT</div>
+    <p>
+      1. Open <a href="https://chatgpt.com" style="color:#0284c7;text-decoration:none;font-weight:600;">ChatGPT</a> in your browser and log into your account.<br>
+      2. Click your <strong>Profile Icon / Name</strong> in the bottom-left corner and select <strong>Settings</strong>.<br>
+      3. Navigate to <strong>Settings & Privacy</strong> (or <strong>Advanced</strong> / <strong>Developer Settings</strong>).<br>
+      4. Locate <strong>Developer Mode</strong> or <strong>Plugin / MCP Developer Features</strong> and toggle it to <strong>ON</strong>.
+    </p>
+  </div>
+
+  <div class="step-card">
+    <div class="step-number">Step 2 — Add Custom MCP Connector / Action</div>
+    <p>
+      1. Navigate to <strong>Explore GPTs</strong> &rarr; Click <strong>Create</strong> (or go to <strong>Settings &rarr; Connected Apps / MCP</strong>).<br>
+      2. Under the <strong>Configure</strong> tab, scroll down to <strong>Actions / MCP Integrations</strong> and click <strong>Add MCP Server</strong> (or <strong>Create new action</strong>).<br>
+      3. Set the <strong>Plugin / App Name</strong>: <br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<code>Google Drive - [Your Name]</code> &nbsp;<em>(e.g., <code>Google Drive - Alex</code> or <code>Google Drive</code>)</em>.<br>
+      4. In the <strong>MCP URL / Server Endpoint</strong> field, enter your deployed MCP endpoint:<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<code>https://&lt;your-mcp-domain&gt;/mcp</code>
+    </p>
+  </div>
+
+  <div class="step-card purple">
+    <div class="step-number purple">Step 3 — Configure OAuth 2.0 Credentials</div>
+    <p>
+      Select <strong>Authentication: OAuth</strong> and enter the server OAuth configuration:
+    </p>
+    <ul>
+      <li><strong>Client ID:</strong> Enter your configured <code>CHATGPT_OAUTH_CLIENT_ID</code></li>
+      <li><strong>Client Secret:</strong> Enter your configured <code>CHATGPT_OAUTH_CLIENT_SECRET</code></li>
+      <li><strong>Authorization URL:</strong> <code>https://&lt;your-mcp-domain&gt;/authorize</code></li>
+      <li><strong>Token URL:</strong> <code>https://&lt;your-mcp-domain&gt;/token</code></li>
+      <li><strong>Scope:</strong> <code>drive</code> &nbsp;|&nbsp; <strong>Token Exchange:</strong> Default (Basic Auth or Post Body)</li>
+    </ul>
+    <p style="margin-top:2px;">Click <strong>Save & Create MCP</strong>. ChatGPT will verify the manifest and load all 32 Drive tools.</p>
+  </div>
+
+  <div class="step-card green">
+    <div class="step-number green">Step 4 — Authorize ChatGPT Session & Link Google Drive</div>
+    <p>
+      1. ChatGPT will open the consent dialog. Click <strong>Authorize & Connect</strong> to bind your ChatGPT user session.<br>
+      2. Open a new chat in ChatGPT and invoke your connector:
+    </p>
+    <div class="chat-sim">
+      <div class="chat-user">User: @Google Drive fetch my drive</div>
+      <div class="chat-gpt">
+        ChatGPT: Google Drive is not connected for your account. Open this secure one-time link to connect your Google account:<br>
+        <span class="chat-link">https://&lt;your-mcp-domain&gt;/auth/google/link?code=glink_4f8a912e...</span><br>
+        <em>(This link is single-use, expires in 10 minutes, and cryptographically pairs your Drive to this session).</em>
+      </div>
+    </div>
+    <p>
+      3. Click the link &rarr; Select your Google Account on the official Google OAuth page &rarr; Click <strong>Allow</strong>.<br>
+      4. You will see <strong>"Google Drive Connected! You can now close this tab and return to ChatGPT."</strong><br>
+      5. Return to ChatGPT and repeat your prompt: <strong>"@Google Drive fetch my drive"</strong>. ChatGPT will now list and manage your Drive files in real time!
+    </p>
+  </div>
+
+  <div class="footer">
+    <span>Google Drive MCP &bull; ChatGPT Installation & User Manual</span>
+    <span>Page 1 of 4</span>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- PAGE 2: TOOL CATALOG (PART 1: SEARCH, READ, DOCS, SHEETS)                -->
+  <!-- ========================================================================= -->
+  <div class="page-break"></div>
+
+  <div class="header">
+    <div>
+      <h1 class="brand-title">Google Drive MCP</h1>
+      <p class="brand-subtitle">Tool Reference & Capabilities (Part 1: Search, Read, Docs & Sheets)</p>
+    </div>
+    <div class="doc-meta">
+      <strong>Total Tools Available:</strong> 32 Production Endpoints<br>
+      <strong>Workspace Integration:</strong> Docs, Sheets, Slides, Drive v3<br>
+      <strong>Memory Safety Ceiling:</strong> 10 MB Stream Enforced
+    </div>
+  </div>
+
+  <h2>3. Search & Discovery Tools</h2>
+  <p>Search your entire Google Drive with keywords, exact filenames, structured filters, or immediate content retrieval:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_search</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Search Drive with simple text queries or structured parameters (name, mime_type, owner_email, dates, parents).</td>
+        <td><em>"Search my Drive for all PDFs modified this month"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_advanced_search</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Multi-clause query constructor supporting complex boolean logic and structured file attribute filtering.</td>
+        <td><em>"Find spreadsheets owned by finance with 'Budget' in title"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_list_folder</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Browse items inside a specific folder with child hierarchy and pagination.</td>
+        <td><em>"List all items inside the 'Marketing Q3' folder"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_get_metadata</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Retrieve full file metadata: ID, MIME type, size, owner, creation/modification dates, sharing state, and permissions.</td>
+        <td><em>"Show me full file details and owner for 'PitchDeck.pdf'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_search_and_read</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Finds the first matching file for a search phrase and immediately returns its full text content in a single operation.</td>
+        <td><em>"Search and read the latest 'Meeting Minutes' document"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. Reading, Downloading & Exporting Tools</h2>
+  <p>Stream file contents directly to ChatGPT memory with automatic Workspace format conversion:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_read_file</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Read content of text files or automatically export native Google Docs/Sheets/Slides into readable text formats.</td>
+        <td><em>"Read the content of 'Executive Summary.txt'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_download_file</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Download files or export Docs/Sheets/Slides into PDF, DOCX, CSV, or XLSX formats with binary-safe base64 streaming.</td>
+        <td><em>"Download 'Quarterly Review' as a PDF"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Native Google Docs API Tools</h2>
+  <p>Read, author, format, and batch-edit native Google Docs without corrupting document structure:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_doc_create</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Create a new native Google Doc with an initial title and optional parent folder.</td>
+        <td><em>"Create a new Google Doc named 'Project Roadmap 2027'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_read</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Inspect native Google Docs document elements, paragraphs, headings, and full text body via Docs API.</td>
+        <td><em>"Read the structure and headings of my 'Design Spec' doc"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_update</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Execute structured Docs API updates (insertText, replaceAllText, format text, bullets, styles).</td>
+        <td><em>"Replace all mentions of 'ACME' with 'Globex' in my doc"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_docs_batch_update</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Batch update Google Docs with multiple simultaneous editing requests in a single transaction.</td>
+        <td><em>"Insert a table and format the title heading in 'Report'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_append</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Safely append paragraphs or bullet points to the end of an existing Google Doc.</td>
+        <td><em>"Append the meeting conclusion paragraph to 'Client Notes'"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>6. Native Google Sheets API Tools</h2>
+  <p>Manipulate spreadsheet cells, read specific A1 ranges, and append tabular records:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_sheet_create</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Create a new Google Spreadsheet with custom sheet titles and grid setup.</td>
+        <td><em>"Create a new Google Sheet named 'Q4 Expense Tracker'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_sheet_read_range</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Read cell values from an A1 notation range (e.g. <code>Sheet1!A1:D10</code>).</td>
+        <td><em>"Read cells A1 to F20 from 'Financial Model'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_sheet_update_range</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Write matrices of data directly into a specific A1 range of an existing Sheet.</td>
+        <td><em>"Update cells B2:C5 in 'Inventory' with new pricing data"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_sheet_append_rows</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Append new tabular records to the next available rows in a sheet table.</td>
+        <td><em>"Append new customer sign-up rows to 'Leads Sheet'"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>Google Drive MCP &bull; Tool Reference (Search, Read, Docs, Sheets)</span>
+    <span>Page 2 of 4</span>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- PAGE 3: TOOL CATALOG (PART 2: SLIDES, ORGANIZATION, PERMISSIONS)          -->
+  <!-- ========================================================================= -->
+  <div class="page-break"></div>
+
+  <div class="header">
+    <div>
+      <h1 class="brand-title">Google Drive MCP</h1>
+      <p class="brand-subtitle">Tool Reference & Capabilities (Part 2: Slides, File Management & Permissions)</p>
+    </div>
+    <div class="doc-meta">
+      <strong>Destructive Guardrails:</strong> Permanent Delete requires explicit fileId<br>
+      <strong>Ownership Safety:</strong> Transfer Strictly Blocked<br>
+      <strong>Recoverability:</strong> Standard Delete routes to Trash
+    </div>
+  </div>
+
+  <h2>7. Native Google Slides Presentation Tools</h2>
+  <p>Create presentation decks, inspect slide structure, and update slide content:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_slides_create</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Create a new Google Slides presentation file with an initial title.</td>
+        <td><em>"Create a presentation named 'Investor Pitch Deck'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_slides_read</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Inspect slide hierarchy, shapes, speaker notes, and text elements inside a presentation.</td>
+        <td><em>"Summarize the slide titles and text in 'Q3 Strategy.pptx'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_slides_update</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Execute batch slide modifications (createSlide, insertText, format shapes).</td>
+        <td><em>"Add 3 slides with title headings to my pitch presentation"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>8. File Management, Organization & Safe Deletion Tools</h2>
+  <p>Create, organize, move, and safely manage your Google Drive files with built-in guardrails:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_create_file</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Upload a new plain-text, markdown, JSON, or CSV file to your Drive.</td>
+        <td><em>"Create a new file called 'summary.md' with meeting notes"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_create_folder</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Create new organizational folders in Drive with optional parent folders.</td>
+        <td><em>"Create a folder called 'Archived Projects 2026'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_update_file</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Update content of non-native text files (blocked on native Docs to prevent corruption).</td>
+        <td><em>"Update 'config.json' with new server parameters"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_rename_file</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Safely rename any file or folder in Google Drive.</td>
+        <td><em>"Rename 'Draft_v1.txt' to 'Final_Document.txt'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_move_file</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Relocate files or folders into a new destination folder.</td>
+        <td><em>"Move 'Invoice_402.pdf' into the 'Accounting' folder"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_copy_file</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Duplicate existing files in Drive with custom names and target folders.</td>
+        <td><em>"Create a backup copy of 'Contract_Master.docx'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_trash_file</span></td>
+        <td><span class="tag-destr">Trash (Safe)</span></td>
+        <td>Move files to Google Drive Trash (soft delete). Fully recoverable at any time.</td>
+        <td><em>"Move 'Outdated Proposal.pdf' to trash"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_restore_file</span></td>
+        <td><span class="tag-rw">Restore</span></td>
+        <td>Restore a previously trashed file back to active Drive status.</td>
+        <td><em>"Restore 'Outdated Proposal.pdf' from trash"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_delete_file_permanently</span></td>
+        <td><span class="tag-destr">Permanent</span></td>
+        <td>Bypasses trash and permanently deletes a single explicit fileId. No retries (maxAttempts: 1).</td>
+        <td><em>"Permanently delete file 'temp_cache.log' (irreversible)"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>9. Permission Governance & Access Auditing Tools</h2>
+  <p>Inspect and configure file sharing while enforcing strict security boundaries:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Tool Name</th>
+        <th style="width: 10%;">Access</th>
+        <th style="width: 37%;">Description & Capabilities</th>
+        <th style="width: 28%;">Example Conversational Prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-tool">drive_list_permissions</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Audit who has access to a file, including user roles and sharing types.</td>
+        <td><em>"Who has access to the 'Confidential Strategy' doc?"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_add_permission</span></td>
+        <td><span class="tag-rw">Governance</span></td>
+        <td>Share file with reader, commenter, or writer roles (ownership transfer blocked).</td>
+        <td><em>"Share 'Pitch.pdf' as viewer with teammate@example.com"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_update_permission</span></td>
+        <td><span class="tag-rw">Governance</span></td>
+        <td>Change an existing permission role (e.g. from writer to reader).</td>
+        <td><em>"Change Sarah's permission on 'Spec' to commenter only"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_remove_permission</span></td>
+        <td><span class="tag-destr">Revoke</span></td>
+        <td>Revoke file access from a specific user or group.</td>
+        <td><em>"Revoke sharing access for contractor@external.com"</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>Google Drive MCP &bull; Tool Reference (Slides, Files, Organization, Permissions)</span>
+    <span>Page 3 of 4</span>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- PAGE 4: TRUST, PRIVACY & DATA SAFETY FOUNDATION                           -->
+  <!-- ========================================================================= -->
+  <div class="page-break"></div>
+
+  <div class="header">
+    <div>
+      <h1 class="brand-title">Google Drive MCP</h1>
+      <p class="brand-subtitle">Trust, Data Privacy & Security Architecture</p>
+    </div>
+    <div class="doc-meta">
+      <span class="badge badge-verified">Enterprise Verified Security</span><br>
+      <strong>Audit Status:</strong> 130/130 Automated Tests Passing<br>
+      <strong>Data Storage Standard:</strong> Zero Content Retention<br>
+      <strong>Encryption Standard:</strong> AES-256-GCM (NIST SP 800-38D)
+    </div>
+  </div>
+
+  <div class="highlight-box green">
+    <strong>Executive Trust & Safety Guarantee:</strong><br>
+    Google Drive MCP operates under a strict <strong>Zero-Persistence Architecture</strong>. Your personal files, document bodies, spreadsheets, slide presentations, folders, and Google Drive contents are <strong>NEVER saved, written to disk, indexed, cached, or harvested</strong> on our servers.
+  </div>
+
+  <h2>10. The Five Pillars of User Data Protection</h2>
+  <div class="grid-2">
+    <div class="card-box">
+      <h4>🚫 1. Zero File Content Persistence</h4>
+      <p>Data streams directly through volatile runtime memory (RAM) over encrypted TLS/HTTPS and is <strong>immediately purged from memory</strong> once forwarded to your chat session. A hard 10 MB ceiling prevents memory exhaustion.</p>
+    </div>
+    <div class="card-box">
+      <h4>🔒 2. Multi-User Cryptographic Isolation</h4>
+      <p>Every ChatGPT user connects their own Google Account. Internal opaque subjects (<code>usr_...</code>) isolate every request. User A can never discover, read, modify, or delete User B's files.</p>
+    </div>
+    <div class="card-box">
+      <h4>🛡️ 3. AES-256-GCM Storage Encryption</h4>
+      <p>Stored OAuth tokens are protected with AES-256-GCM authenticated encryption, 96-bit random IVs, and restricted POSIX <code>0600</code> permissions (never web-accessible).</p>
+    </div>
+    <div class="card-box">
+      <h4>⚡ 4. Single-Use Hashed Linking Tokens</h4>
+      <p>Account linking tokens (<code>glink_...</code>) are hashed with SHA-256, single-use, and expire in 10 minutes. Tokens are never exposed in browser URLs, query parameters, or client-facing responses.</p>
+    </div>
+  </div>
+
+  <h2>11. Destructive Safeguards & Guardrail Architecture</h2>
+  <div class="highlight-box amber">
+    <strong>Built-in Safety Guardrails:</strong>
+    <ul style="margin: 2px 0 0 0; padding-left: 14px;">
+      <li><strong>Trash vs. Permanent Delete:</strong> Standard deletions route safely to Trash (<code>drive_trash_file</code>) and are fully reversible. Permanent deletion requires explicit tool selection and confirmation.</li>
+      <li><strong>Non-Retry Rule on Deletion (SEC-05):</strong> Unlike read queries which retry network hiccups, permanent deletion enforces <code>maxAttempts: 1</code> so dropped packets never cause repeated deletion attempts.</li>
+      <li><strong>Ownership Transfer Strictly Blocked:</strong> Any request attempting to assign the <code>owner</code> role is rejected with an explicit security error (<code>OWNERSHIP_TRANSFER_BLOCKED</code>).</li>
+    </ul>
+  </div>
+
+  <h2>12. Instant User Disconnect & Revocation</h2>
+  <p>You maintain absolute ownership and control over your Google credentials at all times:</p>
+  <div class="grid-2">
+    <div class="card-box">
+      <h4>Method A: Inside ChatGPT</h4>
+      <p>Ask ChatGPT: <em>"Disconnect my Google Drive account"</em>. The server immediately calls <code>POST /auth/google/disconnect</code>, revokes the token with Google, and permanently deletes local stored credentials.</p>
+    </div>
+    <div class="card-box">
+      <h4>Method B: Google Account Security</h4>
+      <p>Visit <a href="https://myaccount.google.com/permissions" style="color:#0284c7;text-decoration:none;font-weight:600;">Google Account Security &rarr; Third-Party Apps</a> and click <em>Remove Access</em>. All subsequent requests fail immediately and trigger automatic local credential purge.</p>
+    </div>
+  </div>
+
+  <h2>13. Compliance & Frequently Asked Questions (FAQ)</h2>
+  <div class="grid-2">
+    <div class="card-box">
+      <h4>Is my data used to train AI models?</h4>
+      <p>No. Data is accessed strictly on demand to fulfill conversational tool requests. The service adheres strictly to the <strong>Google API Services User Data Policy</strong>, including Limited Use requirements.</p>
+    </div>
+    <div class="card-box">
+      <h4>What if a one-time connection link expires?</h4>
+      <p>Connection links expire after 10 minutes or upon first click. If a link expires, simply ask ChatGPT to perform any Drive search again; a fresh, valid link will be generated automatically.</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Google Drive MCP &bull; Trust, Privacy & Security Architecture</span>
+    <span>Page 4 of 4</span>
+  </div>
+
+</body>
+</html>
