@@ -165,7 +165,7 @@ export function getWorkspaceToolGuidance(mimeType) {
     case 'application/vnd.google-apps.presentation':
       return "Direct content overwrite is not supported for native Google Slides presentations. Use dedicated Google Slides tools instead: 'drive_slides_update'.";
     case 'application/vnd.google-apps.document':
-      return "Direct content overwrite is not supported for native Google Docs. Use dedicated Google Docs operations or create a new document with 'drive_create_file'.";
+      return "Direct content overwrite is not supported for native Google Docs. Use dedicated Google Docs tools instead: 'drive_doc_append' (to append text) or 'drive_doc_update' / 'drive_docs_batch_update' (for structural insertions and formatting). To create a new doc with content, use 'drive_doc_create' with 'content'.";
     case 'application/vnd.google-apps.folder':
       return "Cannot update content of a Google Drive folder. Use 'drive_create_folder' or 'drive_move_file' instead.";
     default:
@@ -966,14 +966,14 @@ export const TOOLS = [
   // ------------------------- WRITE TOOLS -------------------------
   {
     name: 'drive_create_file',
-    description: 'Create a new text or data file in Google Drive.',
+    description: 'Create a new text, data, or Google Workspace file in Google Drive. For native Google Docs (application/vnd.google-apps.document), initial content is automatically populated into the document.',
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,
     schema: z.object({
       name: z.string().min(1).describe('Name of the new file'),
-      mimeType: z.string().optional().default('text/plain').describe('MIME type (e.g. text/plain, application/json, text/csv, application/vnd.google-apps.spreadsheet)'),
-      content: z.string().optional().default('').describe('Initial text content of the file (ignored for Google Workspace document types)'),
+      mimeType: z.string().optional().default('text/plain').describe('MIME type (e.g. text/plain, application/json, text/csv, application/vnd.google-apps.document, application/vnd.google-apps.spreadsheet)'),
+      content: z.string().optional().default('').describe('Initial text content of the file. For native Google Docs (application/vnd.google-apps.document), content is automatically populated via Docs API; for other Google Workspace types it is ignored.'),
       parentFolderId: z.string().optional().describe('Optional parent folder ID')
     }),
     handler: async (args, context) => {
@@ -1001,6 +1001,23 @@ export const TOOLS = [
       }
 
       const res = await drive.files.create(createParams);
+
+      if (args.mimeType === 'application/vnd.google-apps.document' && args.content && typeof args.content === 'string' && args.content.length > 0) {
+        const docs = await getDocsClient(context.userSub);
+        await docs.documents.batchUpdate({
+          documentId: res.data.id,
+          requestBody: {
+            requests: [
+              {
+                insertText: {
+                  location: { index: 1 },
+                  text: args.content
+                }
+              }
+            ]
+          }
+        });
+      }
 
       auditLog({
         userSub: context.userSub,
@@ -1319,12 +1336,13 @@ export const TOOLS = [
   // ------------------------- GOOGLE DOCS -------------------------
   {
     name: 'drive_doc_create',
-    description: 'Create a new native Google Doc with optional parent folder.',
+    description: 'Create a new native Google Doc with optional initial content and optional parent folder.',
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,
     schema: z.object({
       title: z.string().min(1).describe('Title of the new Google Doc'),
+      content: z.string().optional().describe('Optional initial text content to populate in the new Google Doc'),
       parentFolderId: z.string().optional().describe('Optional parent folder ID')
     }),
     handler: async (args, context) => {
@@ -1340,6 +1358,24 @@ export const TOOLS = [
       });
 
       const doc = res.data;
+
+      if (args.content && typeof args.content === 'string' && args.content.length > 0) {
+        const docs = await getDocsClient(context.userSub);
+        await docs.documents.batchUpdate({
+          documentId: doc.id,
+          requestBody: {
+            requests: [
+              {
+                insertText: {
+                  location: { index: 1 },
+                  text: args.content
+                }
+              }
+            ]
+          }
+        });
+      }
+
       const webViewLink = doc.webViewLink || `https://docs.google.com/document/d/${doc.id}/edit`;
 
       auditLog({

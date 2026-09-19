@@ -56,7 +56,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 - **`drive_search_and_read`**: Search for a file by query and immediately return the content of the first matching file.
 
 ### Write Tools (9)
-- **`drive_create_file`**: Create a new text or data file with name, MIME type, content, and optional parent folder.
+- **`drive_create_file`**: Create a new text, data, or Google Workspace file with name, MIME type, content, and optional parent folder. For native Google Docs (`application/vnd.google-apps.document`), initial content is automatically populated into the document.
 - **`drive_create_folder`**: Create a new folder in My Drive or Shared Drives.
 - **`drive_update_file`**: Safely replace the content of an existing text or data file (Workspace native documents are protected from direct stream overwriting).
 - **`drive_rename_file`**: Rename an existing file or folder.
@@ -68,7 +68,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 
 ### Google Docs Tools (5)
 - **`drive_doc_create`**: Create a native Google Docs document (`application/vnd.google-apps.document`).
-  - Parameters: `title` (string, required), `parentFolderId` (string, optional).
+  - Parameters: `title` (string, required), `content` (string, optional - initial text content to populate in the document), `parentFolderId` (string, optional).
   - Returns: `documentId`, `title`, `mimeType`, `webViewLink`, `createdTime`.
 - **`drive_doc_read`**: Read document structure, metadata, and full text content using Google Docs API `documents.get`.
   - Parameters: `documentId` (string, required).

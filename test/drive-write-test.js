@@ -1081,6 +1081,8 @@ test('DRV-03: drive_update_file pre-flight guard blocks updates to native Google
   assert.equal(docRes.isError, true);
   assert.ok(docRes.content[0].text.includes('WORKSPACE_DOCUMENT_DIRECT_UPDATE_BLOCKED'));
   assert.ok(docRes.content[0].text.includes('Google Docs'));
+  assert.ok(docRes.content[0].text.includes('drive_doc_append'));
+  assert.ok(docRes.content[0].text.includes('drive_doc_update'));
 
   // 2. Google Sheet update blocked with guidance to drive_sheet_update_range
   const sheetRes = await executeMcpTool('drive_update_file', { fileId: 'g_sheet', content: '1,2,3' }, mockUserSub);
@@ -1652,5 +1654,50 @@ test('DOCS-01: Google Docs Tools (create, read, update, append, formatting, mult
     mockDocsClient.documents.batchUpdate = originalBatchUpdate;
   }
 });
+
+test('DOCS-02: Google Docs Initial Content Creation (drive_doc_create and drive_create_file with content)', async () => {
+  // Test 1: drive_doc_create with { title, content } creates the document and populates the text
+  const docCreateRes = await executeMcpTool('drive_doc_create', {
+    title: 'Initial Content Doc Test',
+    content: 'Welcome to this pre-populated Google Doc!'
+  }, mockUserSub);
+
+  assert.equal(docCreateRes.isError, undefined);
+  const docCreateData = JSON.parse(docCreateRes.content[0].text);
+  assert.equal(docCreateData.success, true);
+  assert.ok(docCreateData.documentId);
+  assert.equal(docCreateData.title, 'Initial Content Doc Test');
+
+  // Verify content was populated via drive_doc_read
+  const readCreatedDoc = await executeMcpTool('drive_doc_read', {
+    documentId: docCreateData.documentId
+  }, mockUserSub);
+  assert.equal(readCreatedDoc.isError, undefined);
+  const readCreatedData = JSON.parse(readCreatedDoc.content[0].text);
+  assert.ok(readCreatedData.textContent.includes('Welcome to this pre-populated Google Doc!'));
+
+  // Test 2: drive_create_file with { name, mimeType: 'application/vnd.google-apps.document', content } creates the document and populates the text
+  const fileCreateDocRes = await executeMcpTool('drive_create_file', {
+    name: 'Generic Create Doc Test',
+    mimeType: 'application/vnd.google-apps.document',
+    content: 'Auto-populated text from drive_create_file!'
+  }, mockUserSub);
+
+  assert.equal(fileCreateDocRes.isError, undefined);
+  const fileCreateData = JSON.parse(fileCreateDocRes.content[0].text);
+  assert.equal(fileCreateData.success, true);
+  assert.ok(fileCreateData.file.id);
+  assert.equal(fileCreateData.file.name, 'Generic Create Doc Test');
+  assert.equal(fileCreateData.file.mimeType, 'application/vnd.google-apps.document');
+
+  // Verify content was populated via drive_doc_read
+  const readGenericDoc = await executeMcpTool('drive_doc_read', {
+    documentId: fileCreateData.file.id
+  }, mockUserSub);
+  assert.equal(readGenericDoc.isError, undefined);
+  const readGenericData = JSON.parse(readGenericDoc.content[0].text);
+  assert.ok(readGenericData.textContent.includes('Auto-populated text from drive_create_file!'));
+});
+
 
 
