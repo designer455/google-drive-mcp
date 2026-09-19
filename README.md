@@ -44,7 +44,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 
 ---
 
-## 2. MCP Tools Reference (32 Tools)
+## 2. MCP Tools Reference (37 Tools)
 
 ### Read Tools (7)
 - **`drive_search`**: Search files matching a query string (e.g., `name contains 'Report' and trashed = false`). Supports pagination and sorting.
@@ -53,33 +53,48 @@ User A (ChatGPT)                   User B (ChatGPT)
 - **`drive_get_metadata`**: Retrieve detailed metadata and permissions for a file or folder.
 - **`drive_read_file`**: Read text content (exports Google Docs, Sheets, and Slides to text/markdown/csv, or downloads text/data files up to 10MB; binary formats returned as base64).
 - **`drive_download_file`**: Download binary files or export Google Workspace documents with specified export MIME types (e.g. PDF, DOCX, XLSX).
-- **`drive_search_and_read`**: Search for a file by query and immediately return the content of the first matching file.
+- **`drive_export_pdf`**: Direct convenience shortcut to export any Google Doc, Sheet, or Slide presentation to standard PDF binary format.
 
 ### Write Tools (9)
-- **`drive_create_file`**: Create a new text, data, or Google Workspace file with name, MIME type, content, and optional parent folder. For native Google Docs (`application/vnd.google-apps.document`), initial content is automatically populated into the document.
-- **`drive_create_folder`**: Create a new folder in My Drive or Shared Drives.
-- **`drive_update_file`**: Safely replace the content of an existing text or data file (Workspace native documents are protected from direct stream overwriting).
+- **`drive_create_file`**: Upload new text/data file with custom MIME type.
+- **`drive_create_folder`**: Create a directory/folder inside a specified parent.
+- **`drive_update_file`**: Overwrite existing file content (SEC-05 protected: automated retries disabled).
+- **`drive_copy_file`**: Duplicate an existing file with optional name change.
+- **`drive_move_file`**: Move a file between folders.
 - **`drive_rename_file`**: Rename an existing file or folder.
-- **`drive_move_file`**: Move a file or folder from its existing parents to a new target folder.
-- **`drive_copy_file`**: Create a copy of an existing file.
 - **`drive_trash_file`**: Safely move a file to the trash (`trashed: true`).
 - **`drive_restore_file`**: Restore a trashed file back to active Drive.
 - **`drive_delete_file_permanently`**: Permanently and irreversibly delete a file from Drive (SEC-05 protected: automated retries disabled).
 
-### Google Docs Tools (5)
+### Google Docs Tools (10)
 - **`drive_doc_create`**: Create a native Google Docs document (`application/vnd.google-apps.document`).
   - Parameters: `title` (string, required), `content` (string, optional - initial text content to populate in the document), `parentFolderId` (string, optional).
   - Returns: `documentId`, `title`, `mimeType`, `webViewLink`, `createdTime`.
-- **`drive_doc_read`**: Read document structure, metadata, and full text content using Google Docs API `documents.get`.
+- **`drive_doc_read`**: Read document structure, metadata, structural element indexes, and full text content using Google Docs API `documents.get`.
   - Parameters: `documentId` (string, required).
-  - Returns: `documentId`, `title`, `documentUrl`, `textContent`, `revisionId`, and structured `body`.
+  - Returns: `documentId`, `title`, `documentUrl`, `documentEndIndex`, `validRange` (`startIndex: 1`, `endIndex`), `segmentsCount`, `segments` (array of paragraphs, heading types, and table summaries with exact Docs API UTF-16 bounds), `textContent`, `revisionId`, and structured `body`. Eliminates index drift math.
 - **`drive_doc_update`**: Perform batch updates using Google Docs API `documents.batchUpdate` (e.g., `insertText`, `replaceAllText`, `updateTextStyle`, `deleteContentRange`, tables).
   - Parameters: `documentId` (string, required), `requests` (array of batchUpdate objects, required).
-  - Safety: Tagged `destructiveHint: true` to enforce SEC-05 single-attempt execution without automated retry on transient errors.
-- **`drive_docs_batch_update`**: Dedicated batch update alias matching ChatGPT tool conventions, invoking Google Docs API `documents.batchUpdate`. Identical interface and capabilities as `drive_doc_update`.
+  - Safety & Range Validation: Pre-validates all request ranges against document segment bounds before calling Google Docs API. Returns structured `DOCUMENT_RANGE_OUT_OF_BOUNDS` errors with the offending request index, requested range, and valid document bounds (`1` to `documentEndIndex`). Tagged `destructiveHint: true` to enforce SEC-05 single-attempt execution.
+- **`drive_docs_batch_update`**: Dedicated batch update alias matching ChatGPT tool conventions, invoking Google Docs API `documents.batchUpdate`. Features the same pre-flight index range validation and execution safeguards as `drive_doc_update`.
 - **`drive_doc_append`**: Convenience tool to append text to the end of a Google Doc.
   - Parameters: `documentId` (string, required), `text` (string, required).
-  - Automatically calculates insertion index before the terminal document break and updates the document.
+  - Automatically calculates insertion index before the terminal document break and updates the document safely.
+- **`drive_doc_format_text`**: High-level styling and heading formatting tool that operates safely without requiring manual index math.
+  - Parameters: `documentId` (string, required), `target` (`'entireDocument'`, `'allMatchingText'`, `'firstMatchingText'`, `'byHeading'`, `'byRange'`), `query` (string, optional search query), `headingType` (optional `'HEADING_1'`..`'HEADING_6'`), `range` (optional `{ startIndex, endIndex }`), `style` (optional `{ bold, italic, underline, strikethrough, fontSize, fontFamily, textColor, backgroundColor }`), `paragraphHeading` (optional new heading style to apply).
+  - Handles index discovery internally or pre-validates provided ranges, applying text styles and paragraph styles atomically.
+- **`drive_doc_find_segments`**: Search for text substrings or headings in a Google Doc and return exact Docs API UTF-16 segment bounds.
+  - Parameters: `documentId` (string, required), `query` (string, optional), `headingType` (string, optional), `caseSensitive` (boolean, optional).
+  - Returns: `documentEndIndex`, `matches` with `startIndex`, `endIndex`, `length`, `text`, and `headingType` for safe downstream batch updates.
+- **`drive_doc_replace_text`**: Atomically find and replace text across a Google Doc using native Docs API `replaceAllText`.
+  - Parameters: `documentId` (string, required), `findText` (string, required), `replaceText` (string, required), `matchCase` (boolean, optional).
+  - Returns: `documentId`, `occurrencesChanged`.
+- **`drive_doc_insert_table`**: Insert an empty table with specified rows and columns at a designated location.
+  - Parameters: `documentId` (string, required), `rows` (integer >= 1), `columns` (integer >= 1), `position` (`'start'`, `'end'`, `'index'`), `index` (integer, optional).
+  - Pre-validates placement against document boundaries.
+- **`drive_doc_insert_page_break`**: Insert a page break at a designated location.
+  - Parameters: `documentId` (string, required), `position` (`'start'`, `'end'`, `'index'`), `index` (integer, optional).
+  - Pre-validates placement against document boundaries.
 
 ### Google Sheets Tools (4)
 - **`drive_sheet_create`**: Create a new Google Spreadsheet with a title and optional initial sheet tabs.

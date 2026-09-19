@@ -444,6 +444,195 @@ export function extractDocsTextContent(doc) {
 }
 
 /**
+ * Accurately calculate the maximum segment end index of a Google Doc body.
+ */
+export function getDocumentEndIndex(doc) {
+  const content = doc?.body?.content;
+  if (!content || !Array.isArray(content) || content.length === 0) {
+    return 1;
+  }
+  const lastElement = content[content.length - 1];
+  return typeof lastElement?.endIndex === 'number' ? lastElement.endIndex : 1;
+}
+
+/**
+ * Extract structured structural elements with true Google Docs API UTF-16 segment bounds.
+ */
+export function extractDocsSegments(doc) {
+  const documentEndIndex = getDocumentEndIndex(doc);
+  if (!doc?.body?.content) {
+    return {
+      documentEndIndex,
+      validRange: { startIndex: 1, endIndex: documentEndIndex },
+      segments: []
+    };
+  }
+
+  const segments = [];
+  for (const element of doc.body.content) {
+    if (element.paragraph) {
+      const p = element.paragraph;
+      const headingType = p.paragraphStyle?.namedStyleType || 'NORMAL_TEXT';
+      let paragraphText = '';
+      const textRuns = [];
+
+      for (const elem of p.elements || []) {
+        if (elem.textRun?.content) {
+          paragraphText += elem.textRun.content;
+          textRuns.push({
+            startIndex: elem.startIndex,
+            endIndex: elem.endIndex,
+            text: elem.textRun.content,
+            style: elem.textRun.textStyle || {}
+          });
+        }
+      }
+
+      if (typeof element.startIndex === 'number' && typeof element.endIndex === 'number') {
+        segments.push({
+          type: 'paragraph',
+          startIndex: element.startIndex,
+          endIndex: element.endIndex,
+          headingType,
+          text: paragraphText,
+          textRuns
+        });
+      }
+    } else if (element.table) {
+      segments.push({
+        type: 'table',
+        startIndex: element.startIndex,
+        endIndex: element.endIndex,
+        rows: element.table.rows,
+        columns: element.table.columns
+      });
+    } else if (element.sectionBreak) {
+      segments.push({
+        type: 'sectionBreak',
+        startIndex: element.startIndex,
+        endIndex: element.endIndex
+      });
+    }
+  }
+
+  return {
+    documentEndIndex,
+    validRange: { startIndex: 1, endIndex: documentEndIndex },
+    segments
+  };
+}
+
+/**
+ * Validate batchUpdate request ranges against document segment bounds before calling Google.
+ * Prevents raw INVALID_ARGUMENT crashes with clear error diagnostics.
+ */
+export function validateDocsBatchRequests(requests, documentEndIndex) {
+  if (!Array.isArray(requests)) {
+    throw new Error('Requests must be an array.');
+  }
+
+  for (let i = 0; i < requests.length; i++) {
+    const req = requests[i];
+    if (!req || typeof req !== 'object') continue;
+
+    const opNames = Object.keys(req);
+    const opName = opNames[0] || 'unknown';
+    const opPayload = req[opName];
+
+    if (!opPayload || typeof opPayload !== 'object') continue;
+
+    // Check range-based operations (updateTextStyle, updateParagraphStyle, deleteContentRange, etc.)
+    const range = opPayload.range || opPayload.tableRange;
+    if (range && (!range.segmentId || range.segmentId === '')) {
+      const { startIndex, endIndex } = range;
+      if (typeof startIndex === 'number' && startIndex < 1) {
+        const err = new Error(
+          `Google Docs batchUpdate validation failed: Request #${i + 1} (${opName}) specifies startIndex ${startIndex} < 1. Document body indexes start at 1.`
+        );
+        err.code = 'DOCUMENT_RANGE_OUT_OF_BOUNDS';
+        err.details = {
+          requestIndex: i,
+          operation: opName,
+          invalidRange: { startIndex, endIndex },
+          validBounds: { startIndex: 1, endIndex: documentEndIndex },
+          hint: 'Google Docs body indexes start at 1.'
+        };
+        throw err;
+      }
+
+      if (typeof endIndex === 'number' && endIndex > documentEndIndex) {
+        const err = new Error(
+          `Google Docs batchUpdate validation failed: Request #${i + 1} (${opName}) specifies endIndex ${endIndex}, which exceeds the document end bound ${documentEndIndex}. (Valid document bounds: [1, ${documentEndIndex}]).`
+        );
+        err.code = 'DOCUMENT_RANGE_OUT_OF_BOUNDS';
+        err.details = {
+          requestIndex: i,
+          operation: opName,
+          invalidRange: { startIndex, endIndex },
+          validBounds: { startIndex: 1, endIndex: documentEndIndex },
+          hint: 'Use drive_doc_read to obtain exact structural element indexes (startIndex/endIndex), or use drive_doc_format_text to format text by query without index calculation.'
+        };
+        throw err;
+      }
+
+      if (typeof startIndex === 'number' && typeof endIndex === 'number' && startIndex > endIndex) {
+        const err = new Error(
+          `Google Docs batchUpdate validation failed: Request #${i + 1} (${opName}) specifies startIndex ${startIndex} > endIndex ${endIndex}.`
+        );
+        err.code = 'DOCUMENT_RANGE_INVALID';
+        err.details = {
+          requestIndex: i,
+          operation: opName,
+          invalidRange: { startIndex, endIndex },
+          validBounds: { startIndex: 1, endIndex: documentEndIndex }
+        };
+        throw err;
+      }
+    }
+
+    // Check location-based insertion operations
+    const location = opPayload.location;
+    if (location && (!location.segmentId || location.segmentId === '')) {
+      const idx = location.index;
+      if (typeof idx === 'number') {
+        if (idx < 1 || idx > documentEndIndex) {
+          const err = new Error(
+            `Google Docs batchUpdate validation failed: Request #${i + 1} (${opName}) specifies insertion index ${idx}, which is outside valid bounds [1, ${documentEndIndex}].`
+          );
+          err.code = 'DOCUMENT_LOCATION_OUT_OF_BOUNDS';
+          err.details = {
+            requestIndex: i,
+            operation: opName,
+            invalidIndex: idx,
+            validBounds: { startIndex: 1, endIndex: documentEndIndex }
+          };
+          throw err;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Convert a hex color string (e.g. #1d4ed8 or #ff0000) into Docs API RgbColor object.
+ */
+export function parseHexColor(hex) {
+  if (!hex || typeof hex !== 'string') return null;
+  let clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map(c => c + c).join('');
+  }
+  if (clean.length !== 6) return null;
+  const num = parseInt(clean, 16);
+  if (isNaN(num)) return null;
+  return {
+    red: ((num >> 16) & 255) / 255,
+    green: ((num >> 8) & 255) / 255,
+    blue: (num & 255) / 255
+  };
+}
+
+/**
  * Format standard successful MCP tool response.
  */
 function formatSuccess(data) {
@@ -1399,7 +1588,7 @@ export const TOOLS = [
   },
   {
     name: 'drive_doc_read',
-    description: 'Read the structure, metadata, and full text content of an existing Google Doc using the Google Docs API.',
+    description: 'Read the structure, metadata, full text content, and structural segment index map of an existing Google Doc using the Google Docs API.',
     readOnlyHint: true,
     openWorldHint: false,
     destructiveHint: false,
@@ -1414,6 +1603,7 @@ export const TOOLS = [
 
       const docData = res.data;
       const textContent = extractDocsTextContent(docData);
+      const { documentEndIndex, validRange, segments } = extractDocsSegments(docData);
       const documentUrl = `https://docs.google.com/document/d/${docData.documentId}/edit`;
 
       auditLog({
@@ -1428,6 +1618,10 @@ export const TOOLS = [
         documentId: docData.documentId,
         title: docData.title,
         documentUrl,
+        documentEndIndex,
+        validRange,
+        segmentsCount: segments.length,
+        segments,
         textContent,
         revisionId: docData.revisionId,
         body: docData.body
@@ -1436,7 +1630,7 @@ export const TOOLS = [
   },
   {
     name: 'drive_doc_update',
-    description: 'Update an existing Google Doc using Google Docs API batchUpdate operations (insertText, replaceAllText, updateTextStyle, formatting, tables, etc.).',
+    description: 'Update an existing Google Doc using Google Docs API batchUpdate operations (insertText, replaceAllText, updateTextStyle, formatting, tables, etc.) with automatic range pre-validation.',
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: true,
@@ -1446,6 +1640,17 @@ export const TOOLS = [
     }),
     handler: async (args, context) => {
       const docs = await getDocsClient(context.userSub);
+
+      // Pre-flight check: read document segment bounds to validate request ranges
+      const docRes = await docs.documents.get({
+        documentId: args.documentId,
+        fields: 'documentId,title,body(content(endIndex))'
+      });
+      const documentEndIndex = getDocumentEndIndex(docRes.data);
+
+      // Pre-validate all requests against document bounds
+      validateDocsBatchRequests(args.requests, documentEndIndex);
+
       const res = await docs.documents.batchUpdate({
         documentId: args.documentId,
         requestBody: {
@@ -1474,7 +1679,7 @@ export const TOOLS = [
   },
   {
     name: 'drive_docs_batch_update',
-    description: 'Batch update an existing Google Doc using Google Docs API batchUpdate operations (insertText, replaceAllText, updateTextStyle, formatting, tables, etc.).',
+    description: 'Batch update an existing Google Doc using Google Docs API batchUpdate operations (insertText, replaceAllText, updateTextStyle, formatting, tables, etc.) with automatic range pre-validation.',
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: true,
@@ -1484,6 +1689,17 @@ export const TOOLS = [
     }),
     handler: async (args, context) => {
       const docs = await getDocsClient(context.userSub);
+
+      // Pre-flight check: read document segment bounds to validate request ranges
+      const docRes = await docs.documents.get({
+        documentId: args.documentId,
+        fields: 'documentId,title,body(content(endIndex))'
+      });
+      const documentEndIndex = getDocumentEndIndex(docRes.data);
+
+      // Pre-validate all requests against document bounds
+      validateDocsBatchRequests(args.requests, documentEndIndex);
+
       const res = await docs.documents.batchUpdate({
         documentId: args.documentId,
         requestBody: {
@@ -1568,6 +1784,468 @@ export const TOOLS = [
         documentUrl,
         insertedAtIndex: insertIndex,
         appendedLength: args.text.length,
+        replies: res.data.replies || []
+      });
+    }
+  },
+  {
+    name: 'drive_doc_format_text',
+    description: 'Format text or headings in an existing Google Doc by matching text or heading content, or specifying a validated range, without manual index calculations.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to format'),
+      textMatch: z.string().optional().describe('Exact text substring to search for and style'),
+      headingMatch: z.string().optional().describe('Text of heading or paragraph to style'),
+      range: z.object({
+        startIndex: z.number().int().min(1).describe('Start index in document body'),
+        endIndex: z.number().int().min(1).describe('End index in document body')
+      }).optional().describe('Direct character range to format'),
+      matchCase: z.boolean().optional().default(false).describe('Whether text matching should be case-sensitive'),
+      occurrence: z.enum(['all', 'first', 'last']).optional().default('all').describe('Which occurrences to format: all, first, or last'),
+      textStyle: z.object({
+        bold: z.boolean().optional().describe('Bold formatting'),
+        italic: z.boolean().optional().describe('Italic formatting'),
+        underline: z.boolean().optional().describe('Underline formatting'),
+        strikethrough: z.boolean().optional().describe('Strikethrough formatting'),
+        fontSize: z.number().optional().describe('Font size in points (e.g. 12, 16, 24)'),
+        foregroundColor: z.string().optional().describe('Hex color string (e.g. #1d4ed8 or #ff0000)'),
+        linkUrl: z.string().optional().describe('Hyperlink URL')
+      }).optional().describe('Character styling to apply'),
+      paragraphStyle: z.object({
+        namedStyleType: z.enum([
+          'NORMAL_TEXT',
+          'TITLE',
+          'SUBTITLE',
+          'HEADING_1',
+          'HEADING_2',
+          'HEADING_3',
+          'HEADING_4',
+          'HEADING_5',
+          'HEADING_6'
+        ]).optional().describe('Heading or paragraph level style'),
+        alignment: z.enum(['START', 'CENTER', 'END', 'JUSTIFIED']).optional().describe('Text alignment')
+      }).optional().describe('Paragraph-level style to apply')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const res = await docs.documents.get({ documentId: args.documentId });
+      const docData = res.data;
+      const documentEndIndex = getDocumentEndIndex(docData);
+
+      let targetRanges = [];
+
+      if (args.range) {
+        targetRanges.push(args.range);
+      } else if (args.headingMatch) {
+        const hMatch = args.matchCase ? args.headingMatch : args.headingMatch.toLowerCase();
+        for (const element of docData.body?.content || []) {
+          if (element.paragraph?.elements) {
+            let pText = '';
+            for (const elem of element.paragraph.elements) {
+              if (elem.textRun?.content) pText += elem.textRun.content;
+            }
+            const compText = args.matchCase ? pText : pText.toLowerCase();
+            if (compText.includes(hMatch)) {
+              targetRanges.push({
+                startIndex: element.startIndex,
+                endIndex: element.endIndex,
+                matchedText: pText.trim()
+              });
+            }
+          }
+        }
+      } else if (args.textMatch) {
+        const query = args.matchCase ? args.textMatch : args.textMatch.toLowerCase();
+        for (const element of docData.body?.content || []) {
+          if (element.paragraph?.elements) {
+            for (const elem of element.paragraph.elements) {
+              if (elem.textRun?.content) {
+                const runContent = elem.textRun.content;
+                const compContent = args.matchCase ? runContent : runContent.toLowerCase();
+                let offset = 0;
+                while (offset < compContent.length) {
+                  const foundIdx = compContent.indexOf(query, offset);
+                  if (foundIdx === -1) break;
+                  const start = elem.startIndex + foundIdx;
+                  const end = start + args.textMatch.length;
+                  targetRanges.push({
+                    startIndex: start,
+                    endIndex: end,
+                    matchedText: runContent.slice(foundIdx, foundIdx + args.textMatch.length)
+                  });
+                  offset = foundIdx + Math.max(1, query.length);
+                }
+              }
+            }
+          }
+        }
+      } else {
+        throw new Error('At least one of textMatch, headingMatch, or range must be provided.');
+      }
+
+      if (targetRanges.length === 0) {
+        return formatSuccess({
+          success: true,
+          documentId: args.documentId,
+          message: 'No matching text or headings found to format.',
+          formattedMatches: 0,
+          modifiedRanges: []
+        });
+      }
+
+      // Filter by occurrence
+      if (args.occurrence === 'first') {
+        targetRanges = [targetRanges[0]];
+      } else if (args.occurrence === 'last') {
+        targetRanges = [targetRanges[targetRanges.length - 1]];
+      }
+
+      const requests = [];
+
+      // Build textStyle request
+      if (args.textStyle) {
+        const textFields = [];
+        const styleObj = {};
+        if (typeof args.textStyle.bold === 'boolean') {
+          textFields.push('bold');
+          styleObj.bold = args.textStyle.bold;
+        }
+        if (typeof args.textStyle.italic === 'boolean') {
+          textFields.push('italic');
+          styleObj.italic = args.textStyle.italic;
+        }
+        if (typeof args.textStyle.underline === 'boolean') {
+          textFields.push('underline');
+          styleObj.underline = args.textStyle.underline;
+        }
+        if (typeof args.textStyle.strikethrough === 'boolean') {
+          textFields.push('strikethrough');
+          styleObj.strikethrough = args.textStyle.strikethrough;
+        }
+        if (typeof args.textStyle.fontSize === 'number') {
+          textFields.push('fontSize');
+          styleObj.fontSize = { magnitude: args.textStyle.fontSize, unit: 'PT' };
+        }
+        if (args.textStyle.foregroundColor) {
+          const rgb = parseHexColor(args.textStyle.foregroundColor);
+          if (rgb) {
+            textFields.push('foregroundColor');
+            styleObj.foregroundColor = { color: { rgbColor: rgb } };
+          }
+        }
+        if (args.textStyle.linkUrl) {
+          textFields.push('link');
+          styleObj.link = { url: args.textStyle.linkUrl };
+        }
+
+        if (textFields.length > 0) {
+          for (const rng of targetRanges) {
+            requests.push({
+              updateTextStyle: {
+                range: {
+                  startIndex: rng.startIndex,
+                  endIndex: rng.endIndex
+                },
+                textStyle: styleObj,
+                fields: textFields.join(',')
+              }
+            });
+          }
+        }
+      }
+
+      // Build paragraphStyle request
+      if (args.paragraphStyle) {
+        const paraFields = [];
+        const paraObj = {};
+        if (args.paragraphStyle.namedStyleType) {
+          paraFields.push('namedStyleType');
+          paraObj.namedStyleType = args.paragraphStyle.namedStyleType;
+        }
+        if (args.paragraphStyle.alignment) {
+          paraFields.push('alignment');
+          paraObj.alignment = args.paragraphStyle.alignment;
+        }
+
+        if (paraFields.length > 0) {
+          for (const rng of targetRanges) {
+            requests.push({
+              updateParagraphStyle: {
+                range: {
+                  startIndex: rng.startIndex,
+                  endIndex: rng.endIndex
+                },
+                paragraphStyle: paraObj,
+                fields: paraFields.join(',')
+              }
+            });
+          }
+        }
+      }
+
+      if (requests.length === 0) {
+        throw new Error('No valid style attributes specified in textStyle or paragraphStyle.');
+      }
+
+      // Validate before sending
+      validateDocsBatchRequests(requests, documentEndIndex);
+
+      const updateRes = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: { requests }
+      });
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.format_text',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { targetCount: targetRanges.length, requestCount: requests.length }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl: `https://docs.google.com/document/d/${args.documentId}/edit`,
+        formattedMatches: targetRanges.length,
+        modifiedRanges: targetRanges.map(r => ({
+          startIndex: r.startIndex,
+          endIndex: r.endIndex,
+          text: r.matchedText || undefined
+        })),
+        replies: updateRes.data.replies || []
+      });
+    }
+  },
+  {
+    name: 'drive_doc_find_segments',
+    description: 'Find exact Google Docs API structural element indexes (startIndex, endIndex) for specific text or headings in a document.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to search'),
+      query: z.string().min(1).describe('Text string to search for'),
+      matchCase: z.boolean().optional().default(false).describe('Whether search is case-sensitive')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const res = await docs.documents.get({ documentId: args.documentId });
+      const docData = res.data;
+      const documentEndIndex = getDocumentEndIndex(docData);
+      const q = args.matchCase ? args.query : args.query.toLowerCase();
+
+      const matches = [];
+      for (const element of docData.body?.content || []) {
+        if (element.paragraph?.elements) {
+          let fullParagraphText = '';
+          for (const el of element.paragraph.elements) {
+            if (el.textRun?.content) fullParagraphText += el.textRun.content;
+          }
+
+          for (const el of element.paragraph.elements) {
+            if (el.textRun?.content) {
+              const runContent = el.textRun.content;
+              const comp = args.matchCase ? runContent : runContent.toLowerCase();
+              let offset = 0;
+              while (offset < comp.length) {
+                const found = comp.indexOf(q, offset);
+                if (found === -1) break;
+                matches.push({
+                  text: runContent.slice(found, found + args.query.length),
+                  startIndex: el.startIndex + found,
+                  endIndex: el.startIndex + found + args.query.length,
+                  headingType: element.paragraph.paragraphStyle?.namedStyleType || 'NORMAL_TEXT',
+                  paragraphSnippet: fullParagraphText.trim().slice(0, 120)
+                });
+                offset = found + Math.max(1, q.length);
+              }
+            }
+          }
+        }
+      }
+
+      return formatSuccess({
+        documentId: args.documentId,
+        title: docData.title,
+        documentEndIndex,
+        validRange: { startIndex: 1, endIndex: documentEndIndex },
+        matchCount: matches.length,
+        matches
+      });
+    }
+  },
+  {
+    name: 'drive_doc_replace_text',
+    description: 'Replace all occurrences of a string across an entire Google Doc using Google Docs API native atomic replaceAllText.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to update'),
+      findText: z.string().min(1).describe('The text string to find'),
+      replaceText: z.string().describe('The replacement text string'),
+      matchCase: z.boolean().optional().default(true).describe('Whether search is case-sensitive')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const res = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: {
+          requests: [
+            {
+              replaceAllText: {
+                containsText: {
+                  text: args.findText,
+                  matchCase: args.matchCase ?? true
+                },
+                replaceText: args.replaceText
+              }
+            }
+          ]
+        }
+      });
+
+      const occurrencesChanged = res.data.replies?.[0]?.replaceAllText?.occurrencesChanged || 0;
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.replace_text',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { occurrencesChanged }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl: `https://docs.google.com/document/d/${args.documentId}/edit`,
+        occurrencesChanged
+      });
+    }
+  },
+  {
+    name: 'drive_doc_insert_table',
+    description: 'Insert a table into an existing Google Doc at a specified location or end of document.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to update'),
+      rows: z.number().int().min(1).max(100).describe('Number of table rows'),
+      columns: z.number().int().min(1).max(20).describe('Number of table columns'),
+      location: z.union([z.enum(['start', 'end']), z.number().int().min(1)]).optional().default('end').describe('Where to insert: "start", "end", or specific index (default "end")')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const docRes = await docs.documents.get({
+        documentId: args.documentId,
+        fields: 'body(content(endIndex))'
+      });
+      const docEnd = getDocumentEndIndex(docRes.data);
+
+      let insertIndex;
+      if (args.location === 'start') {
+        insertIndex = 1;
+      } else if (typeof args.location === 'number') {
+        insertIndex = Math.min(docEnd - 1, Math.max(1, args.location));
+      } else {
+        insertIndex = Math.max(1, docEnd - 1);
+      }
+
+      const res = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: {
+          requests: [
+            {
+              insertTable: {
+                rows: args.rows,
+                columns: args.columns,
+                location: { index: insertIndex }
+              }
+            }
+          ]
+        }
+      });
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.insert_table',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { rows: args.rows, columns: args.columns, insertIndex }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl: `https://docs.google.com/document/d/${args.documentId}/edit`,
+        rows: args.rows,
+        columns: args.columns,
+        insertedAtIndex: insertIndex,
+        replies: res.data.replies || []
+      });
+    }
+  },
+  {
+    name: 'drive_doc_insert_page_break',
+    description: 'Insert a page break into an existing Google Doc at a specified location or end of document.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to update'),
+      location: z.union([z.enum(['start', 'end']), z.number().int().min(1)]).optional().default('end').describe('Where to insert: "start", "end", or specific index (default "end")')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const docRes = await docs.documents.get({
+        documentId: args.documentId,
+        fields: 'body(content(endIndex))'
+      });
+      const docEnd = getDocumentEndIndex(docRes.data);
+
+      let insertIndex;
+      if (args.location === 'start') {
+        insertIndex = 1;
+      } else if (typeof args.location === 'number') {
+        insertIndex = Math.min(docEnd - 1, Math.max(1, args.location));
+      } else {
+        insertIndex = Math.max(1, docEnd - 1);
+      }
+
+      const res = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: {
+          requests: [
+            {
+              insertPageBreak: {
+                location: { index: insertIndex }
+              }
+            }
+          ]
+        }
+      });
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.insert_page_break',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { insertIndex }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl: `https://docs.google.com/document/d/${args.documentId}/edit`,
+        insertedAtIndex: insertIndex,
         replies: res.data.replies || []
       });
     }

@@ -302,7 +302,7 @@
   </div>
 
   <div class="highlight-box">
-    <strong>Executive Summary:</strong> This manual provides comprehensive instructions for installing the <strong>Google Drive MCP</strong> server inside ChatGPT, activating Developer Mode, configuring OAuth 2.0 endpoints, linking your Google Drive with secure single-use linking tokens, and utilizing all 32 Drive tools.
+    <strong>Executive Summary:</strong> This manual provides comprehensive instructions for installing the <strong>Google Drive MCP</strong> server inside ChatGPT, activating Developer Mode, configuring OAuth 2.0 endpoints, linking your Google Drive with secure single-use linking tokens, and utilizing all 37 Drive tools.
   </div>
 
   <h2>1. Prerequisites</h2>
@@ -357,7 +357,7 @@
       <li><strong>Token URL:</strong> <code>https://&lt;your-mcp-domain&gt;/token</code></li>
       <li><strong>Scope:</strong> <code>drive</code> &nbsp;|&nbsp; <strong>Token Exchange:</strong> Default (Basic Auth or Post Body)</li>
     </ul>
-    <p style="margin-top:2px;">Click <strong>Save & Create MCP</strong>. ChatGPT will verify the manifest and load all 32 Drive tools.</p>
+    <p style="margin-top:2px;">Click <strong>Save & Create MCP</strong>. ChatGPT will verify the manifest and load all 37 Drive tools.</p>
   </div>
 
   <div class="step-card green">
@@ -397,7 +397,7 @@
       <p class="brand-subtitle">Tool Reference & Capabilities (Part 1: Search, Read, Docs & Sheets)</p>
     </div>
     <div class="doc-meta">
-      <strong>Total Tools Available:</strong> 32 Production Endpoints<br>
+      <strong>Total Tools Available:</strong> 37 Production Endpoints<br>
       <strong>Workspace Integration:</strong> Docs, Sheets, Slides, Drive v3<br>
       <strong>Memory Safety Ceiling:</strong> 10 MB Stream Enforced
     </div>
@@ -519,6 +519,36 @@
         <td><span class="tag-rw">Read/Write</span></td>
         <td>Safely append paragraphs or bullet points to the end of an existing Google Doc.</td>
         <td><em>"Append the meeting conclusion paragraph to 'Client Notes'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_format_text</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Format text and headings by search query or heading match without manual index math.</td>
+        <td><em>"Make all occurrences of 'Important Notice' bold and red"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_find_segments</span></td>
+        <td><span class="tag-ro">Read-Only</span></td>
+        <td>Search substrings or headings and retrieve exact Docs API UTF-16 segment bounds.</td>
+        <td><em>"Find start and end indexes of section 'Pricing Model'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_replace_text</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Atomically replace text across the document using Docs API replaceAllText.</td>
+        <td><em>"Replace '2025' with '2026' across the entire document"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_insert_table</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Insert an empty structured table with specified rows and columns at start or end.</td>
+        <td><em>"Insert a 3x4 table at the end of 'Q3 Report'"</em></td>
+      </tr>
+      <tr>
+        <td><span class="tag-tool">drive_doc_insert_page_break</span></td>
+        <td><span class="tag-rw">Read/Write</span></td>
+        <td>Insert a page break at start, end, or specific document index safely.</td>
+        <td><em>"Insert a page break at the end of the document"</em></td>
       </tr>
     </tbody>
   </table>

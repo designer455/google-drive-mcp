@@ -30,9 +30,9 @@ test.after(() => {
   }
 });
 
-test('1. Tool Registry: Verifies all 32 expected tools are registered', () => {
+test('1. Tool Registry: Verifies all 37 expected tools are registered', () => {
   const registered = listMcpTools();
-  assert.equal(registered.length, 32);
+  assert.equal(registered.length, 37);
 
   const names = registered.map(t => t.name);
 
@@ -56,12 +56,17 @@ test('1. Tool Registry: Verifies all 32 expected tools are registered', () => {
   assert.ok(names.includes('drive_restore_file'));
   assert.ok(names.includes('drive_delete_file_permanently'));
 
-  // 5 Docs tools (including drive_docs_batch_update alias)
+  // 10 Docs tools (including drive_docs_batch_update alias and extended formatting suite)
   assert.ok(names.includes('drive_doc_create'));
   assert.ok(names.includes('drive_doc_read'));
   assert.ok(names.includes('drive_doc_update'));
   assert.ok(names.includes('drive_docs_batch_update'));
   assert.ok(names.includes('drive_doc_append'));
+  assert.ok(names.includes('drive_doc_format_text'));
+  assert.ok(names.includes('drive_doc_find_segments'));
+  assert.ok(names.includes('drive_doc_replace_text'));
+  assert.ok(names.includes('drive_doc_insert_table'));
+  assert.ok(names.includes('drive_doc_insert_page_break'));
 
   // 4 Sheets tools
   assert.ok(names.includes('drive_sheet_create'));

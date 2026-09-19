@@ -67,7 +67,7 @@ function makeRequest({ method = 'GET', path: reqPath, host = 'mcp.example.com', 
 
 test('1. Every registered MCP tool includes all three annotations', () => {
   const tools = listMcpTools();
-  assert.equal(tools.length, 32);
+  assert.equal(tools.length, 37);
 
   for (const tool of tools) {
     // Top-level hints
@@ -96,6 +96,7 @@ test('2. Read-only tools have readOnlyHint: true and destructiveHint: false', ()
     'drive_download_file',
     'drive_search_and_read',
     'drive_doc_read',
+    'drive_doc_find_segments',
     'drive_sheet_read_range',
     'drive_slides_read',
     'drive_list_permissions'
@@ -121,6 +122,9 @@ test('3. Creation and addition write tools have readOnlyHint: false and destruct
     'drive_restore_file',
     'drive_doc_create',
     'drive_doc_append',
+    'drive_doc_format_text',
+    'drive_doc_insert_table',
+    'drive_doc_insert_page_break',
     'drive_sheet_create',
     'drive_sheet_append_rows',
     'drive_slides_create',
@@ -144,6 +148,7 @@ test('4. Destructive and overwriting tools have readOnlyHint: false and destruct
     'drive_delete_file_permanently',
     'drive_doc_update',
     'drive_docs_batch_update',
+    'drive_doc_replace_text',
     'drive_sheet_update_range',
     'drive_slides_update',
     'drive_update_permission',
