@@ -10,6 +10,8 @@ import {
   consumeGoogleOAuthState,
   saveGoogleLinkToken,
   consumeGoogleLinkToken,
+  createSignedGoogleLinkToken,
+  createSignedGoogleOAuthState,
   getUserGoogleRecord,
   setUserGoogleTokens,
   deleteUserGoogleRecord,
@@ -78,6 +80,7 @@ async function resolveUserSubFromRequest(req) {
 /**
  * Create a secure, short-lived, one-time link token for an authenticated MCP user.
  * Returns the browser-safe connection URL without exposing bearer tokens or userSub.
+ * Stateless HMAC signing ensures validation succeeds across any Vercel container.
  *
  * @param {string} userSub - Authenticated MCP user ID
  * @returns {Promise<string>} Browser-safe link URL
@@ -87,11 +90,13 @@ export async function createGoogleLinkToken(userSub) {
     throw new Error('Valid authenticated userSub is required to create a Google link token');
   }
 
-  // Generate 48 cryptographically random bytes (96 hex characters)
-  const randomPart = crypto.randomBytes(48).toString('hex');
-  const linkToken = `glink_${randomPart}`;
+  const expirySecs = parseInt(process.env.OAUTH_GOOGLE_LINK_EXPIRY_SECONDS, 10) || 600;
+  const linkToken = createSignedGoogleLinkToken(userSub, expirySecs * 1000);
 
-  await saveGoogleLinkToken(linkToken, userSub);
+  // Also save to disk for backward compatibility / local test suites
+  try {
+    await saveGoogleLinkToken(linkToken, userSub, expirySecs * 1000);
+  } catch {}
 
   const origin = getPublicOrigin();
   return `${origin}/auth/google/link?code=${encodeURIComponent(linkToken)}`;
@@ -121,12 +126,14 @@ export async function handleGoogleLink(req, res) {
     return res.status(400).send(`Google connection link invalid or expired: ${escapeHtml(err.message)}`);
   }
 
-  // Generate cryptographically secure Google OAuth state
-  const state = crypto.randomBytes(32).toString('hex');
+  // Generate cryptographically signed Google OAuth state (stateless across Vercel containers)
   const stateExpiryMs = (parseInt(process.env.OAUTH_STATE_EXPIRY_SECONDS, 10) || 600) * 1000;
+  const state = createSignedGoogleOAuthState(userSub, stateExpiryMs);
 
-  // Bind state to the retrieved userSub on the server
-  await saveGoogleOAuthState(state, userSub, stateExpiryMs);
+  // Also save to local store if available
+  try {
+    await saveGoogleOAuthState(state, userSub, stateExpiryMs);
+  } catch {}
 
   const oauth2Client = getGoogleOAuthClient();
   const scopes = getGoogleScopes();
@@ -160,12 +167,14 @@ export async function handleGoogleAuthInitiate(req, res) {
     });
   }
 
-  // Generate cryptographically secure state
-  const state = crypto.randomBytes(32).toString('hex');
+  // Generate cryptographically signed state (stateless across Vercel containers)
   const stateExpiryMs = (parseInt(process.env.OAUTH_STATE_EXPIRY_SECONDS, 10) || 600) * 1000;
+  const state = createSignedGoogleOAuthState(userSub, stateExpiryMs);
 
-  // Bind state to the authenticated MCP user on the server
-  await saveGoogleOAuthState(state, userSub, stateExpiryMs);
+  // Also save to local store if available
+  try {
+    await saveGoogleOAuthState(state, userSub, stateExpiryMs);
+  } catch {}
 
   const oauth2Client = getGoogleOAuthClient();
   const scopes = getGoogleScopes();
@@ -239,13 +248,14 @@ export async function handleGoogleOAuthCallback(req, res) {
     // Persist tokens securely under the user's opaque subject
     await setUserGoogleTokens(userSub, tokens, accountInfo);
 
-    // Log permanent refresh token for Vercel deployment (Solution 1)
+    // Log permanent refresh token for single-user deployment
     if (tokens.refresh_token) {
       console.log('\n======================================================');
-      console.log('⚡ [Google Drive MCP] PERMANENT REFRESH TOKEN (Solution 1):');
+      console.log('⚡ [Google Drive MCP] SINGLE-USER REFRESH TOKEN (Optional):');
       console.log(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
-      console.log('Set this in your Vercel Project Settings -> Environment Variables');
-      console.log('to make this connection permanent across all serverless cold-starts.');
+      console.log('For Single-User Mode Only: Set SINGLE_USER_MODE=true and GOOGLE_REFRESH_TOKEN');
+      console.log('in Vercel Project Settings if this server is for your private personal use only.');
+      console.log('For Multi-User Mode: Each user connects their own account (no shared token).');
       console.log('======================================================\n');
     }
 
@@ -293,13 +303,13 @@ export async function handleGoogleOAuthCallback(req, res) {
 
     ${tokens.refresh_token ? `
     <div class="token-box">
-      <div class="token-title">⚡ Permanent Vercel Connection (Solution 1)</div>
+      <div class="token-title">⚡ Single-User Mode Only (Optional)</div>
       <div class="token-desc">
-        Serverless functions reset temporary files periodically. To make this connection <strong>100% permanent</strong> so it never disconnects:
+        If this server is exclusively for your private, single-user use, you can set <code>SINGLE_USER_MODE=true</code> and:
       </div>
       <div class="code-block" id="tokenCode">GOOGLE_REFRESH_TOKEN=${escapeHtml(tokens.refresh_token)}</div>
       <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('tokenCode').innerText); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy Token', 2000)">Copy Token</button>
-      <div style="font-size: 10px; color: #64748b; margin-top: 6px;">Add this to Vercel Project Settings &rarr; Environment Variables.</div>
+      <div style="font-size: 10px; color: #64748b; margin-top: 6px;">For multi-user mode: do NOT set this in Vercel. Each user connects their own isolated Google account.</div>
     </div>
     ` : ''}
 

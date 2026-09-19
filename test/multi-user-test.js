@@ -250,3 +250,24 @@ test('7. Token auto-refresh persists new credentials for THAT user only', async 
   // Refresh token should be preserved
   assert.equal(updatedB.google.refresh_token, 'google_refresh_for_user_b');
 });
+
+test('8. Multi-user security: GOOGLE_REFRESH_TOKEN in env is ignored in multi-user mode', async () => {
+  const userSubD = 'usr_user_d_unconnected_attacker';
+  
+  // Set GOOGLE_REFRESH_TOKEN in env (as if owner set it on Vercel)
+  process.env.GOOGLE_REFRESH_TOKEN = '1//owner-private-refresh-token';
+  delete process.env.SINGLE_USER_MODE;
+
+  // Attempting to get Google record for User D must return null
+  const recordD = await getUserGoogleRecord(userSubD);
+  assert.equal(recordD, null, 'Unconnected user must not receive the owner refresh token in multi-user mode');
+
+  // getGoogleAuthClient must fail with GOOGLE_NOT_CONNECTED
+  await assert.rejects(
+    async () => { await getGoogleAuthClient(userSubD); },
+    (err) => err.code === 'GOOGLE_NOT_CONNECTED'
+  );
+
+  // Clean up
+  delete process.env.GOOGLE_REFRESH_TOKEN;
+});

@@ -167,47 +167,119 @@ function safeReadJsonSync(filePath, defaultValue) {
 // Google User Credentials Management
 // -------------------------------------------------------------
 
+// -------------------------------------------------------------
+// Remote KV Store Integration (Vercel KV / Upstash Redis / Redis)
+// -------------------------------------------------------------
+function getKvConfig() {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (url && token) {
+    return { url: url.replace(/\/$/, ''), token };
+  }
+  return null;
+}
+
+export function isKvConfigured() {
+  return Boolean(getKvConfig());
+}
+
+export async function kvGetUserGoogleRecord(userSub) {
+  const kv = getKvConfig();
+  if (!kv || !userSub) return null;
+  try {
+    const res = await fetch(`${kv.url}/get/${encodeURIComponent(`google_user:${userSub}`)}`, {
+      headers: { Authorization: `Bearer ${kv.token}` }
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.result) return null;
+    const raw = typeof json.result === 'string' ? json.result : JSON.stringify(json.result);
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function kvSetUserGoogleRecord(userSub, record) {
+  const kv = getKvConfig();
+  if (!kv || !userSub) return false;
+  try {
+    const res = await fetch(`${kv.url}/set/${encodeURIComponent(`google_user:${userSub}`)}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${kv.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(JSON.stringify(record))
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function kvDeleteUserGoogleRecord(userSub) {
+  const kv = getKvConfig();
+  if (!kv || !userSub) return false;
+  try {
+    const res = await fetch(`${kv.url}/del/${encodeURIComponent(`google_user:${userSub}`)}`, {
+      headers: { Authorization: `Bearer ${kv.token}` }
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// -------------------------------------------------------------
+// Google User Credentials Management
+// -------------------------------------------------------------
+
 /**
  * Retrieve Google credentials for a specific user.
+ * STRICT MULTI-USER ISOLATION: Each user receives only their own authenticated credentials.
  *
  * @param {string} userSub - Internal opaque user identifier
  * @returns {Object|null} User record or null
  */
 export async function getUserGoogleRecord(userSub) {
   if (!userSub) return null;
+
+  // 1. Check remote KV store if configured (for serverless multi-user persistence)
+  if (isKvConfigured()) {
+    const kvRecord = await kvGetUserGoogleRecord(userSub);
+    if (kvRecord && kvRecord.google && (kvRecord.google.access_token || kvRecord.google.refresh_token)) {
+      return kvRecord;
+    }
+  }
+
+  // 2. Check local encrypted file store
   const userRecord = await fileMutex.runExclusive(async () => {
     const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     return data.users?.[userSub] || null;
   });
 
-  const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN ? process.env.GOOGLE_REFRESH_TOKEN.trim() : null;
-
-  if (userRecord && userRecord.google) {
-    // If user record exists in store, supplement with env refresh token if missing
-    if (!userRecord.google.refresh_token && envRefreshToken) {
-      userRecord.google.refresh_token = envRefreshToken;
-    }
-    if (userRecord.google.access_token || userRecord.google.refresh_token) {
-      return userRecord;
-    }
+  if (userRecord && userRecord.google && (userRecord.google.access_token || userRecord.google.refresh_token)) {
+    return userRecord;
   }
 
-  // Solution 1: Fallback to GOOGLE_REFRESH_TOKEN environment variable (permanent connection on Vercel)
-  if (envRefreshToken) {
+  // 3. SINGLE-USER MODE ONLY (strictly opt-in):
+  // Never leak credentials across users in standard multi-user mode.
+  if (process.env.SINGLE_USER_MODE === 'true' && process.env.GOOGLE_REFRESH_TOKEN) {
     return {
       google: {
-        refresh_token: envRefreshToken,
+        refresh_token: process.env.GOOGLE_REFRESH_TOKEN.trim(),
         scope: process.env.GOOGLE_DRIVE_SCOPES || undefined
       },
       account: {
-        email: process.env.GOOGLE_ACCOUNT_EMAIL || 'Connected Google Account',
-        displayName: 'Primary Google Account'
+        email: process.env.GOOGLE_ACCOUNT_EMAIL || 'Single User Account',
+        displayName: 'Primary Account'
       },
       source: 'env'
     };
   }
 
-  return userRecord;
+  return null;
 }
 
 /**
@@ -219,12 +291,37 @@ export async function getUserGoogleRecord(userSub) {
  */
 export async function setUserGoogleTokens(userSub, tokens, accountInfo = null) {
   if (!userSub) throw new Error('userSub is required');
+  const now = new Date().toISOString();
+
+  // If remote KV store is configured, persist for serverless durability across cold starts
+  if (isKvConfigured()) {
+    try {
+      const existing = (await kvGetUserGoogleRecord(userSub)) || {};
+      const mergedTokens = {
+        ...existing.google,
+        ...tokens
+      };
+      const record = {
+        google: mergedTokens,
+        account: accountInfo || existing.account || { email: null, displayName: null },
+        createdAt: existing.createdAt || now,
+        updatedAt: now
+      };
+      await kvSetUserGoogleRecord(userSub, record);
+    } catch (err) {
+      auditLog({
+        action: 'kv.set_error',
+        status: 'failure',
+        details: { userSub, error: err.message }
+      });
+    }
+  }
+
   return fileMutex.runExclusive(async () => {
     const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     if (!data.users) data.users = {};
 
     const existing = data.users[userSub] || {};
-    const now = new Date().toISOString();
 
     // Preserve existing refresh token if new token set didn't include one
     const mergedTokens = {
@@ -252,6 +349,17 @@ export async function setUserGoogleTokens(userSub, tokens, accountInfo = null) {
  */
 export async function deleteUserGoogleRecord(userSub) {
   if (!userSub) return false;
+  if (isKvConfigured()) {
+    try {
+      await kvDeleteUserGoogleRecord(userSub);
+    } catch (err) {
+      auditLog({
+        action: 'kv.delete_error',
+        status: 'failure',
+        details: { userSub, error: err.message }
+      });
+    }
+  }
   return fileMutex.runExclusive(async () => {
     const data = safeReadEncryptedJsonSync(USERS_FILE, { users: {} }, undefined, safeWriteJsonSync);
     if (!data.users || !data.users[userSub]) {
@@ -267,8 +375,72 @@ export async function deleteUserGoogleRecord(userSub) {
 // Google OAuth State Management
 // -------------------------------------------------------------
 
+// In-memory replay prevention cache for consumed stateless signatures
+const consumedSignatures = new Set();
+
+function markSignatureConsumed(sig) {
+  if (consumedSignatures.size > 10000) {
+    consumedSignatures.clear();
+  }
+  consumedSignatures.add(sig);
+}
+
+function isSignatureConsumed(sig) {
+  return consumedSignatures.has(sig);
+}
+
 /**
- * Save Google OAuth state record bound to a userSub.
+ * Generate a cryptographically signed, stateless OAuth state bound to userSub.
+ * Enables zero-disk state validation across Vercel serverless containers.
+ */
+export function createSignedGoogleOAuthState(userSub, expiresInMs = 600000) {
+  if (!userSub) throw new Error('userSub is required');
+  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'gstate-secret-key';
+  const data = {
+    sub: userSub,
+    exp: Date.now() + expiresInMs,
+    rnd: crypto.randomBytes(16).toString('hex')
+  };
+  const body = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(`gstate_${body}`).digest('base64url');
+  return `gstate_${body}.${sig}`;
+}
+
+/**
+ * Verify and decode an HMAC-signed Google OAuth state. Returns userSub or throws.
+ */
+export function verifySignedGoogleOAuthState(stateString) {
+  if (!stateString || typeof stateString !== 'string') return null;
+  const parts = stateString.split('.');
+  if (parts.length !== 2) return null;
+  const [prefixAndBody, sig] = parts;
+  if (!prefixAndBody.startsWith('gstate_')) return null;
+
+  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'gstate-secret-key';
+  const expectedSig = crypto.createHmac('sha256', secret).update(prefixAndBody).digest('base64url');
+
+  try {
+    const bufA = Buffer.from(sig);
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+      return null;
+    }
+    const bodyStr = prefixAndBody.slice('gstate_'.length);
+    const payload = JSON.parse(Buffer.from(bodyStr, 'base64url').toString('utf8'));
+    if (payload.exp && Date.now() > payload.exp) {
+      const err = new Error('OAuth state has expired');
+      err.code = 'OAUTH_STATE_EXPIRED';
+      throw err;
+    }
+    return payload.sub || null;
+  } catch (err) {
+    if (err.code === 'OAUTH_STATE_EXPIRED') throw err;
+    return null;
+  }
+}
+
+/**
+ * Save Google OAuth state record bound to a userSub (for stateful/local storage).
  *
  * @param {string} state - Cryptographically random state string
  * @param {string} userSub - Opaque user ID
@@ -303,6 +475,7 @@ export async function saveGoogleOAuthState(state, userSub, expiresInMs = 600000)
 
 /**
  * Atomically consume and validate Google OAuth state.
+ * Supports both stateless HMAC-signed state and local disk store.
  * Returns the bound userSub if valid, or throws error.
  *
  * @param {string} state
@@ -313,6 +486,24 @@ export async function consumeGoogleOAuthState(state) {
     const err = new Error('Missing OAuth state parameter');
     err.code = 'OAUTH_STATE_INVALID';
     throw err;
+  }
+
+  // Stateless HMAC signed state check (survives Vercel container recycling)
+  if (typeof state === 'string' && state.startsWith('gstate_') && state.includes('.')) {
+    const userSub = verifySignedGoogleOAuthState(state);
+    if (!userSub) {
+      const err = new Error('Invalid or unknown OAuth state');
+      err.code = 'OAUTH_STATE_INVALID';
+      throw err;
+    }
+    const sig = state.split('.')[1];
+    if (isSignatureConsumed(sig)) {
+      const err = new Error('OAuth state has already been consumed (replay detected)');
+      err.code = 'OAUTH_STATE_REPLAY';
+      throw err;
+    }
+    markSignatureConsumed(sig);
+    return userSub;
   }
 
   return fileMutex.runExclusive(async () => {
@@ -340,7 +531,6 @@ export async function consumeGoogleOAuthState(state) {
       throw err;
     }
 
-
     // Mark as used and delete immediately to prevent reuse
     record.used = true;
     const userSub = record.userSub;
@@ -356,7 +546,57 @@ export async function consumeGoogleOAuthState(state) {
 // -------------------------------------------------------------
 
 /**
- * Save a one-time Google link token securely (hashed).
+ * Generate a cryptographically signed, stateless Google link token bound to userSub.
+ * Enables zero-disk link token validation across Vercel serverless containers.
+ */
+export function createSignedGoogleLinkToken(userSub, expiresInMs = 600000) {
+  if (!userSub) throw new Error('userSub is required');
+  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'glink-secret-key';
+  const data = {
+    sub: userSub,
+    exp: Date.now() + expiresInMs,
+    rnd: crypto.randomBytes(16).toString('hex')
+  };
+  const body = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(`glink_${body}`).digest('base64url');
+  return `glink_${body}.${sig}`;
+}
+
+/**
+ * Verify and decode an HMAC-signed Google link token. Returns userSub or throws.
+ */
+export function verifySignedGoogleLinkToken(tokenString) {
+  if (!tokenString || typeof tokenString !== 'string') return null;
+  const parts = tokenString.split('.');
+  if (parts.length !== 2) return null;
+  const [prefixAndBody, sig] = parts;
+  if (!prefixAndBody.startsWith('glink_')) return null;
+
+  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'glink-secret-key';
+  const expectedSig = crypto.createHmac('sha256', secret).update(prefixAndBody).digest('base64url');
+
+  try {
+    const bufA = Buffer.from(sig);
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+      return null;
+    }
+    const bodyStr = prefixAndBody.slice('glink_'.length);
+    const payload = JSON.parse(Buffer.from(bodyStr, 'base64url').toString('utf8'));
+    if (payload.exp && Date.now() > payload.exp) {
+      const err = new Error('Google link token has expired');
+      err.code = 'GOOGLE_LINK_EXPIRED';
+      throw err;
+    }
+    return payload.sub || null;
+  } catch (err) {
+    if (err.code === 'GOOGLE_LINK_EXPIRED') throw err;
+    return null;
+  }
+}
+
+/**
+ * Save a one-time Google link token securely (hashed) to disk.
  *
  * @param {string} linkToken - Cryptographically random token (e.g. glink_...)
  * @param {string} userSub - Opaque MCP user ID
@@ -397,6 +637,7 @@ export async function saveGoogleLinkToken(linkToken, userSub, expiresInMs) {
 
 /**
  * Atomically consume and validate a one-time Google link token.
+ * Supports both stateless HMAC-signed tokens and local disk store.
  * Returns the bound userSub if valid, or throws error.
  *
  * @param {string} linkToken
@@ -407,6 +648,24 @@ export async function consumeGoogleLinkToken(linkToken) {
     const err = new Error('Missing Google link token');
     err.code = 'GOOGLE_LINK_INVALID';
     throw err;
+  }
+
+  // Stateless HMAC signed link token check (survives Vercel container recycling)
+  if (typeof linkToken === 'string' && linkToken.startsWith('glink_') && linkToken.includes('.')) {
+    const userSub = verifySignedGoogleLinkToken(linkToken);
+    if (!userSub) {
+      const err = new Error('Invalid or unknown Google link token');
+      err.code = 'GOOGLE_LINK_INVALID';
+      throw err;
+    }
+    const sig = linkToken.split('.')[1];
+    if (isSignatureConsumed(sig)) {
+      const err = new Error('Google link token has already been consumed (replay detected)');
+      err.code = 'GOOGLE_LINK_REPLAY';
+      throw err;
+    }
+    markSignatureConsumed(sig);
+    return userSub;
   }
 
   return fileMutex.runExclusive(async () => {
