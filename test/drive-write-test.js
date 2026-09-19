@@ -30,9 +30,9 @@ test.after(() => {
   }
 });
 
-test('1. Tool Registry: Verifies all 27 expected tools are registered', () => {
+test('1. Tool Registry: Verifies all 31 expected tools are registered', () => {
   const registered = listMcpTools();
-  assert.equal(registered.length, 27);
+  assert.equal(registered.length, 31);
 
   const names = registered.map(t => t.name);
 
@@ -55,6 +55,12 @@ test('1. Tool Registry: Verifies all 27 expected tools are registered', () => {
   assert.ok(names.includes('drive_trash_file'));
   assert.ok(names.includes('drive_restore_file'));
   assert.ok(names.includes('drive_delete_file_permanently'));
+
+  // 4 Docs tools
+  assert.ok(names.includes('drive_doc_create'));
+  assert.ok(names.includes('drive_doc_read'));
+  assert.ok(names.includes('drive_doc_update'));
+  assert.ok(names.includes('drive_doc_append'));
 
   // 4 Sheets tools
   assert.ok(names.includes('drive_sheet_create'));
@@ -86,6 +92,30 @@ const mockDriveState = {
   ],
   permissions: {
     f1: [{ id: 'p1', role: 'reader', type: 'user', emailAddress: 'collaborator@example.com' }]
+  },
+  docs: {
+    doc1: {
+      documentId: 'doc1',
+      title: 'Google Doc',
+      revisionId: 'rev_1',
+      body: {
+        content: [
+          {
+            paragraph: {
+              elements: [
+                {
+                  textRun: {
+                    content: 'Initial doc content\n',
+                    textStyle: {}
+                  }
+                }
+              ]
+            },
+            endIndex: 20
+          }
+        ]
+      }
+    }
   },
   sheets: {
     s1: {
@@ -204,14 +234,40 @@ const mockDriveClient = {
         };
         throw err;
       }
+      const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newFile = {
-        id: `file_${Date.now()}`,
+        id: fileId,
         name: params.requestBody.name,
         mimeType: params.requestBody.mimeType,
         parents: params.requestBody.parents || ['root'],
-        createdTime: new Date().toISOString()
+        createdTime: new Date().toISOString(),
+        webViewLink: `https://docs.google.com/document/d/${fileId}/edit`
       };
       mockDriveState.files.push(newFile);
+      if (params.requestBody.mimeType === 'application/vnd.google-apps.document') {
+        mockDriveState.docs[newFile.id] = {
+          documentId: newFile.id,
+          title: newFile.name,
+          revisionId: 'rev_1',
+          body: {
+            content: [
+              {
+                paragraph: {
+                  elements: [
+                    {
+                      textRun: {
+                        content: '\n',
+                        textStyle: {}
+                      }
+                    }
+                  ]
+                },
+                endIndex: 1
+              }
+            ]
+          }
+        };
+      }
       return { data: newFile };
     },
     update: async (params) => {
@@ -376,10 +432,118 @@ const mockSlidesClient = {
   }
 };
 
+const mockDocsClient = {
+  documents: {
+    get: async (params) => {
+      const doc = mockDriveState.docs[params.documentId];
+      if (!doc) {
+        const err = new Error(`Document not found: ${params.documentId}`);
+        err.code = 404;
+        err.response = { status: 404, data: { error: { code: 404, message: `Document not found: ${params.documentId}` } } };
+        throw err;
+      }
+      return { data: JSON.parse(JSON.stringify(doc)) };
+    },
+    batchUpdate: async (params) => {
+      const doc = mockDriveState.docs[params.documentId];
+      if (!doc) {
+        const err = new Error(`Document not found: ${params.documentId}`);
+        err.code = 404;
+        err.response = { status: 404, data: { error: { code: 404, message: `Document not found: ${params.documentId}` } } };
+        throw err;
+      }
+      mockDocsClient.lastBatchRequests = params.requestBody?.requests || [];
+      const replies = [];
+
+      for (const req of mockDocsClient.lastBatchRequests) {
+        if (req.insertText) {
+          const text = req.insertText.text || '';
+          doc.body.content.push({
+            paragraph: {
+              elements: [
+                {
+                  textRun: {
+                    content: text,
+                    textStyle: {}
+                  }
+                }
+              ]
+            },
+            endIndex: (doc.body.content[doc.body.content.length - 1]?.endIndex || 1) + text.length
+          });
+          replies.push({ insertText: {} });
+        } else if (req.replaceAllText) {
+          const find = req.replaceAllText.containsText?.text;
+          const replace = req.replaceAllText.replaceText || '';
+          let count = 0;
+          for (const elem of doc.body.content) {
+            for (const pe of elem.paragraph?.elements || []) {
+              if (pe.textRun?.content && find && pe.textRun.content.includes(find)) {
+                pe.textRun.content = pe.textRun.content.replaceAll(find, replace);
+                count++;
+              }
+            }
+          }
+          replies.push({ replaceAllText: { occurrencesChanged: count } });
+        } else if (req.updateTextStyle) {
+          for (const elem of doc.body.content) {
+            for (const pe of elem.paragraph?.elements || []) {
+              if (pe.textRun) {
+                pe.textRun.textStyle = { ...pe.textRun.textStyle, ...req.updateTextStyle.textStyle };
+              }
+            }
+          }
+          replies.push({ updateTextStyle: {} });
+        } else {
+          replies.push({});
+        }
+      }
+
+      return { data: { documentId: params.documentId, replies } };
+    }
+  }
+};
+
+const defaultDocsClientOverride = async (userSub) => {
+  if (userSub === 'usr_unauthorized_user') {
+    return {
+      documents: {
+        get: async () => {
+          const err = new Error('The caller does not have permission');
+          err.code = 403;
+          throw err;
+        },
+        batchUpdate: async () => {
+          const err = new Error('The caller does not have permission');
+          err.code = 403;
+          throw err;
+        }
+      }
+    };
+  }
+  return mockDocsClient;
+};
+
 // Use clean override hook
 const { setGoogleClientOverrides } = await import('../src/google.js');
 setGoogleClientOverrides({
-  getDriveClient: async () => mockDriveClient,
+  getDriveClient: async (userSub) => {
+    if (userSub === 'usr_unauthorized_user') {
+      return {
+        ...mockDriveClient,
+        files: {
+          ...mockDriveClient.files,
+          create: async () => {
+            const err = new Error('The caller does not have permission');
+            err.code = 403;
+            throw err;
+          }
+        }
+      };
+    }
+    return mockDriveClient;
+  },
+  getDocsClient: defaultDocsClientOverride,
   getSheetsClient: async () => mockSheetsClient,
   getSlidesClient: async () => mockSlidesClient
 });
@@ -666,6 +830,7 @@ test('9. Regression Test: googleapis v146 HTTP Serialization puts spreadsheet in
 
   setGoogleClientOverrides({
     getDriveClient: async () => mockDriveClient,
+    getDocsClient: defaultDocsClientOverride,
     getSheetsClient: async () => realSheetsClient,
     getSlidesClient: async () => mockSlidesClient
   });
@@ -696,6 +861,7 @@ test('9. Regression Test: googleapis v146 HTTP Serialization puts spreadsheet in
   } finally {
     setGoogleClientOverrides({
       getDriveClient: async () => mockDriveClient,
+      getDocsClient: defaultDocsClientOverride,
       getSheetsClient: async () => mockSheetsClient,
       getSlidesClient: async () => mockSlidesClient
     });
@@ -1324,6 +1490,144 @@ test('SEC-05: Destructive tools disable automated retry (maxAttempts: 1), while 
   assert.equal(successData.success, true);
   assert.equal(successData.permanent, true);
   assert.equal(mockDriveState.files.some(f => f.id === 'sec05_file_to_delete'), false);
+});
+
+test('DOCS-01: Google Docs Tools (create, read, update, append, formatting, multi-user isolation, SEC-05)', async () => {
+  // Test 1 — Create: drive_doc_create creates a real native Google Doc
+  const createRes = await executeMcpTool('drive_doc_create', { title: 'Varun Docs API Test' }, mockUserSub);
+  assert.equal(createRes.isError, undefined);
+  const createData = JSON.parse(createRes.content[0].text);
+  assert.equal(createData.success, true);
+  assert.ok(createData.documentId);
+  assert.equal(createData.title, 'Varun Docs API Test');
+  assert.equal(createData.mimeType, 'application/vnd.google-apps.document');
+  assert.ok(createData.webViewLink.includes(createData.documentId));
+
+  const docId = createData.documentId;
+
+  // Test 2 — Read: drive_doc_read reads the newly created document
+  const readRes1 = await executeMcpTool('drive_doc_read', { documentId: docId }, mockUserSub);
+  assert.equal(readRes1.isError, undefined);
+  const readData1 = JSON.parse(readRes1.content[0].text);
+  assert.equal(readData1.documentId, docId);
+  assert.equal(readData1.title, 'Varun Docs API Test');
+  assert.ok(readData1.documentUrl.includes(docId));
+  assert.ok(readData1.body);
+
+  // Test 3 — Insert: insertText "Hello from Google Docs MCP."
+  const insertRes = await executeMcpTool('drive_doc_update', {
+    documentId: docId,
+    requests: [
+      {
+        insertText: {
+          location: { index: 1 },
+          text: 'Hello from Google Docs MCP.'
+        }
+      }
+    ]
+  }, mockUserSub);
+  assert.equal(insertRes.isError, undefined);
+  const insertData = JSON.parse(insertRes.content[0].text);
+  assert.equal(insertData.success, true);
+  assert.equal(insertData.documentId, docId);
+
+  // Verify text was inserted
+  const readRes2 = await executeMcpTool('drive_doc_read', { documentId: docId }, mockUserSub);
+  const readData2 = JSON.parse(readRes2.content[0].text);
+  assert.ok(readData2.textContent.includes('Hello from Google Docs MCP.'));
+
+  // Test 4 — Replace: replace "Hello from Google Docs MCP." with "Updated from ChatGPT."
+  const replaceRes = await executeMcpTool('drive_doc_update', {
+    documentId: docId,
+    requests: [
+      {
+        replaceAllText: {
+          containsText: {
+            text: 'Hello from Google Docs MCP.'
+          },
+          replaceText: 'Updated from ChatGPT.'
+        }
+      }
+    ]
+  }, mockUserSub);
+  assert.equal(replaceRes.isError, undefined);
+
+  // Verify text was replaced
+  const readRes3 = await executeMcpTool('drive_doc_read', { documentId: docId }, mockUserSub);
+  const readData3 = JSON.parse(readRes3.content[0].text);
+  assert.ok(readData3.textContent.includes('Updated from ChatGPT.'));
+  assert.equal(readData3.textContent.includes('Hello from Google Docs MCP.'), false);
+
+  // Test 5 — Formatting: Apply bold formatting
+  const formatRes = await executeMcpTool('drive_doc_update', {
+    documentId: docId,
+    requests: [
+      {
+        updateTextStyle: {
+          range: {
+            startIndex: 1,
+            endIndex: 21
+          },
+          textStyle: {
+            bold: true
+          },
+          fields: 'bold'
+        }
+      }
+    ]
+  }, mockUserSub);
+  assert.equal(formatRes.isError, undefined);
+  const formatData = JSON.parse(formatRes.content[0].text);
+  assert.equal(formatData.success, true);
+
+  // Test 6 — Append: drive_doc_append adds text at the end
+  const appendRes = await executeMcpTool('drive_doc_append', {
+    documentId: docId,
+    text: 'This content was appended through the MCP.'
+  }, mockUserSub);
+  assert.equal(appendRes.isError, undefined);
+  const appendData = JSON.parse(appendRes.content[0].text);
+  assert.equal(appendData.success, true);
+  assert.equal(appendData.documentId, docId);
+  assert.ok(appendData.insertedAtIndex >= 1);
+
+  // Verify text was appended
+  const readRes4 = await executeMcpTool('drive_doc_read', { documentId: docId }, mockUserSub);
+  const readData4 = JSON.parse(readRes4.content[0].text);
+  assert.ok(readData4.textContent.includes('This content was appended through the MCP.'));
+
+  // Test 7 — Multi-user isolation: Unauthorized user cannot read or update User A's document
+  const unauthorizedRead = await executeMcpTool('drive_doc_read', { documentId: docId }, 'usr_unauthorized_user');
+  assert.equal(unauthorizedRead.isError, true);
+  assert.ok(unauthorizedRead.content[0].text.includes('permission') || unauthorizedRead.content[0].text.includes('403'));
+
+  const unauthorizedUpdate = await executeMcpTool('drive_doc_update', {
+    documentId: docId,
+    requests: [{ insertText: { location: { index: 1 }, text: 'Hacked' } }]
+  }, 'usr_unauthorized_user');
+  assert.equal(unauthorizedUpdate.isError, true);
+
+  // Test 8 — SEC-05 Verification: drive_doc_update (destructiveHint: true) receives maxAttempts: 1
+  let updateAttempts = 0;
+  const originalBatchUpdate = mockDocsClient.documents.batchUpdate;
+  mockDocsClient.documents.batchUpdate = async (params) => {
+    updateAttempts++;
+    const err = new Error('Service Unavailable (Transient)');
+    err.status = 503;
+    throw err;
+  };
+
+  try {
+    const transientUpdateRes = await executeMcpTool('drive_doc_update', {
+      documentId: docId,
+      requests: [{ insertText: { location: { index: 1 }, text: 'Transient test' } }]
+    }, mockUserSub);
+    assert.equal(transientUpdateRes.isError, true);
+    // Crucial check: must have attempted EXACTLY 1 time, no retries
+    assert.equal(updateAttempts, 1, 'drive_doc_update must have maxAttempts: 1 (no retries)');
+  } finally {
+    mockDocsClient.documents.batchUpdate = originalBatchUpdate;
+  }
 });
 
 

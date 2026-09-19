@@ -28,7 +28,10 @@ export function getGoogleOAuthClient() {
 
 export function getGoogleScopes() {
   const customScopes = process.env.GOOGLE_DRIVE_SCOPES;
-  const defaultScopes = ['https://www.googleapis.com/auth/drive'];
+  const defaultScopes = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/documents'
+  ];
 
   const scopes = customScopes
     ? customScopes.split(',').map(s => s.trim()).filter(Boolean)

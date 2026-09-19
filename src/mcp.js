@@ -412,6 +412,38 @@ export function buildDriveSearchQuery(args) {
 }
 
 /**
+ * Helper to recursively extract plain text from Google Docs structural body elements.
+ */
+export function extractDocsTextContent(doc) {
+  if (!doc?.body?.content) return '';
+  let text = '';
+  for (const element of doc.body.content) {
+    if (element.paragraph?.elements) {
+      for (const elem of element.paragraph.elements) {
+        if (elem.textRun?.content) {
+          text += elem.textRun.content;
+        }
+      }
+    } else if (element.table?.tableRows) {
+      for (const row of element.table.tableRows) {
+        for (const cell of row.tableCells || []) {
+          for (const cellElem of cell.content || []) {
+            if (cellElem.paragraph?.elements) {
+              for (const elem of cellElem.paragraph.elements) {
+                if (elem.textRun?.content) {
+                  text += elem.textRun.content;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return text;
+}
+
+/**
  * Format standard successful MCP tool response.
  */
 function formatSuccess(data) {
@@ -1280,6 +1312,189 @@ export const TOOLS = [
         permanent: true,
         fileId: args.fileId,
         message: 'File permanently deleted.'
+      });
+    }
+  },
+
+  // ------------------------- GOOGLE DOCS -------------------------
+  {
+    name: 'drive_doc_create',
+    description: 'Create a new native Google Doc with optional parent folder.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      title: z.string().min(1).describe('Title of the new Google Doc'),
+      parentFolderId: z.string().optional().describe('Optional parent folder ID')
+    }),
+    handler: async (args, context) => {
+      const drive = await getDriveClient(context.userSub);
+      const res = await drive.files.create({
+        requestBody: {
+          name: args.title,
+          mimeType: 'application/vnd.google-apps.document',
+          ...(args.parentFolderId ? { parents: [args.parentFolderId] } : {})
+        },
+        fields: 'id, name, mimeType, webViewLink, createdTime',
+        supportsAllDrives: true
+      });
+
+      const doc = res.data;
+      const webViewLink = doc.webViewLink || `https://docs.google.com/document/d/${doc.id}/edit`;
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.create',
+        resourceId: doc.id,
+        resourceType: 'document',
+        status: 'success'
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: doc.id,
+        title: doc.name,
+        name: doc.name,
+        mimeType: doc.mimeType,
+        webViewLink,
+        createdTime: doc.createdTime
+      });
+    }
+  },
+  {
+    name: 'drive_doc_read',
+    description: 'Read the structure, metadata, and full text content of an existing Google Doc using the Google Docs API.',
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to read')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const res = await docs.documents.get({
+        documentId: args.documentId
+      });
+
+      const docData = res.data;
+      const textContent = extractDocsTextContent(docData);
+      const documentUrl = `https://docs.google.com/document/d/${docData.documentId}/edit`;
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.read',
+        resourceId: docData.documentId,
+        resourceType: 'document',
+        status: 'success'
+      });
+
+      return formatSuccess({
+        documentId: docData.documentId,
+        title: docData.title,
+        documentUrl,
+        textContent,
+        revisionId: docData.revisionId,
+        body: docData.body
+      });
+    }
+  },
+  {
+    name: 'drive_doc_update',
+    description: 'Update an existing Google Doc using Google Docs API batchUpdate operations (insertText, replaceAllText, updateTextStyle, formatting, tables, etc.).',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to update'),
+      requests: z.array(z.record(z.any())).min(1).describe('Array of Google Docs API batchUpdate request objects')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const res = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: {
+          requests: args.requests
+        }
+      });
+
+      const documentUrl = `https://docs.google.com/document/d/${args.documentId}/edit`;
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.update',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { requestCount: args.requests.length }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl,
+        replies: res.data.replies || []
+      });
+    }
+  },
+  {
+    name: 'drive_doc_append',
+    description: 'Append text to the end of an existing Google Doc.',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to append text to'),
+      text: z.string().min(1).describe('Text to append at the end of the document')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const docRes = await docs.documents.get({
+        documentId: args.documentId
+      });
+
+      const content = docRes.data.body?.content || [];
+      let insertIndex = 1;
+      if (content.length > 0) {
+        const lastElement = content[content.length - 1];
+        if (lastElement && typeof lastElement.endIndex === 'number') {
+          // In Google Docs API, documents always end with a trailing newline at the final index.
+          // Inserting at endIndex - 1 appends immediately before the document terminal break.
+          insertIndex = Math.max(1, lastElement.endIndex - 1);
+        }
+      }
+
+      const res = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: {
+          requests: [
+            {
+              insertText: {
+                location: { index: insertIndex },
+                text: args.text
+              }
+            }
+          ]
+        }
+      });
+
+      const documentUrl = `https://docs.google.com/document/d/${args.documentId}/edit`;
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.append',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { textLength: args.text.length, insertIndex }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl,
+        insertedAtIndex: insertIndex,
+        appendedLength: args.text.length,
+        replies: res.data.replies || []
       });
     }
   },

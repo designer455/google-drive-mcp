@@ -44,23 +44,41 @@ User A (ChatGPT)                   User B (ChatGPT)
 
 ---
 
-## 2. MCP Tools Reference (23 Tools)
+## 2. MCP Tools Reference (31 Tools)
 
-### Read Tools (5)
+### Read Tools (7)
 - **`drive_search`**: Search files matching a query string (e.g., `name contains 'Report' and trashed = false`). Supports pagination and sorting.
-- **`drive_list_folder`**: List items inside a specific folder ID (default: `'root'`).
-- **`drive_get_metadata`**: Retrieve detailed metadata for a file or folder.
-- **`drive_read_file`**: Read file contents (exports Google Docs, Sheets, and Slides to text/csv, or downloads text/data files up to 10MB).
+- **`drive_advanced_search`**: Advanced structured search filtering by filename, content, mimeType, owner, date ranges, parent folder, and trashed state.
+- **`drive_list_folder`**: List items inside a specific folder ID (default: `'root'`) with pagination support.
+- **`drive_get_metadata`**: Retrieve detailed metadata and permissions for a file or folder.
+- **`drive_read_file`**: Read text content (exports Google Docs, Sheets, and Slides to text/markdown/csv, or downloads text/data files up to 10MB; binary formats returned as base64).
+- **`drive_download_file`**: Download binary files or export Google Workspace documents with specified export MIME types (e.g. PDF, DOCX, XLSX).
 - **`drive_search_and_read`**: Search for a file by query and immediately return the content of the first matching file.
 
-### Write Tools (7)
+### Write Tools (9)
 - **`drive_create_file`**: Create a new text or data file with name, MIME type, content, and optional parent folder.
 - **`drive_create_folder`**: Create a new folder in My Drive or Shared Drives.
-- **`drive_update_file`**: Safely replace the content of an existing text or data file.
+- **`drive_update_file`**: Safely replace the content of an existing text or data file (Workspace native documents are protected from direct stream overwriting).
 - **`drive_rename_file`**: Rename an existing file or folder.
 - **`drive_move_file`**: Move a file or folder from its existing parents to a new target folder.
 - **`drive_copy_file`**: Create a copy of an existing file.
-- **`drive_trash_file`**: Safely move a file to the trash (`trashed: true`). Never permanently deletes.
+- **`drive_trash_file`**: Safely move a file to the trash (`trashed: true`).
+- **`drive_restore_file`**: Restore a trashed file back to active Drive.
+- **`drive_delete_file_permanently`**: Permanently and irreversibly delete a file from Drive (SEC-05 protected: automated retries disabled).
+
+### Google Docs Tools (4)
+- **`drive_doc_create`**: Create a native Google Docs document (`application/vnd.google-apps.document`).
+  - Parameters: `title` (string, required), `parentFolderId` (string, optional).
+  - Returns: `documentId`, `title`, `mimeType`, `webViewLink`, `createdTime`.
+- **`drive_doc_read`**: Read document structure, metadata, and full text content using Google Docs API `documents.get`.
+  - Parameters: `documentId` (string, required).
+  - Returns: `documentId`, `title`, `documentUrl`, `textContent`, `revisionId`, and structured `body`.
+- **`drive_doc_update`**: Perform batch updates using Google Docs API `documents.batchUpdate` (e.g., `insertText`, `replaceAllText`, `updateTextStyle`, `deleteContentRange`, tables).
+  - Parameters: `documentId` (string, required), `requests` (array of batchUpdate objects, required).
+  - Safety: Tagged `destructiveHint: true` to enforce SEC-05 single-attempt execution without automated retry on transient errors.
+- **`drive_doc_append`**: Convenience tool to append text to the end of a Google Doc.
+  - Parameters: `documentId` (string, required), `text` (string, required).
+  - Automatically calculates insertion index before the terminal document break and updates the document.
 
 ### Google Sheets Tools (4)
 - **`drive_sheet_create`**: Create a new Google Spreadsheet with a title and optional initial sheet tabs.
@@ -83,7 +101,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 Every tool explicitly advertises safety hints both as top-level properties and in the `annotations` object:
 - **`readOnlyHint`** (`boolean`): Indicates whether the tool only reads data without modifying server or external state (`true` for search, read, metadata, list tools).
 - **`openWorldHint`** (`boolean`): Indicates whether the tool interacts with the open web/external network arbitrarily (`false` for all Drive tools).
-- **`destructiveHint`** (`boolean`): Indicates whether the tool performs destructive, overwriting, or trashing operations (`true` for `drive_update_file`, `drive_trash_file`, `drive_sheet_update_range`, `drive_slides_update`, `drive_update_permission`, `drive_remove_permission`).
+- **`destructiveHint`** (`boolean`): Indicates whether the tool performs destructive, overwriting, or trashing operations (`true` for `drive_update_file`, `drive_trash_file`, `drive_delete_file_permanently`, `drive_doc_update`, `drive_sheet_update_range`, `drive_slides_update`, `drive_update_permission`, `drive_remove_permission`). Ensures SEC-05 single-attempt execution.
 
 ---
 
@@ -198,14 +216,15 @@ ALLOWED_HOST=mcp-v2.digitonsdevelopment.com
 MCP_PUBLIC_ORIGIN=https://mcp-v2.digitonsdevelopment.com
 MCP_PUBLIC_URL=https://mcp-v2.digitonsdevelopment.com/mcp
 
-# Persistent Storage (Outside Git & Deployment Directories)
+# Persistent Storage & Encryption (Outside Git & Deployment Directories)
 DATA_DIR=/home/u142843264/.google-drive-mcp-v2
+STORAGE_ENCRYPTION_KEY=64-char-hex-string-for-aes-256-gcm-storage-encryption
 
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=https://mcp-v2.digitonsdevelopment.com/oauth2callback
-GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive
+GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/documents
 
 # ChatGPT OAuth Configuration
 CHATGPT_OAUTH_CLIENT_ID=your-chatgpt-client-id
@@ -305,14 +324,15 @@ npm run check
 npm test
 ```
 
-The test suite runs 67 comprehensive automated tests across 7 suites:
+The test suite runs 130 comprehensive automated tests across 8 suites:
 - `test/pages-test.js`: Public informational and legal pages (`/privacy`, `/terms`, `/support`, `/`), unauthenticated access, content completeness, link integrity, and zero secret/token leakage.
 - `test/google-link-test.js`: One-time Google link token generation, single-use atomic consumption, expiration, replay rejection, User A vs User B isolation, direct Bearer requirement, error messaging, audit sanitization, and full end-to-end connect journey.
 - `test/oauth-test.js`: RFC discovery, PKCE S256 verification, token rotation, code replay, OpenID alias, and expiry checks.
 - `test/multi-user-test.js`: User A vs User B credential isolation, disconnect isolation, per-user token refresh.
-- `test/drive-write-test.js`: All 23 tools (Read, Write, Sheets, Slides, Permissions).
+- `test/drive-write-test.js`: All 31 tools (Read, Write, Docs, Sheets, Slides, Permissions, Core deletions & restorations, SEC-05 single retry rules).
 - `test/security-test.js`: State replay/expiry/CSRF, IDOR prevention, ownership transfer blocking, host validation, log sanitization, and `0600` file permissions.
-- `test/annotations-test.js`: All 23 tool hints (`readOnlyHint`, `openWorldHint`, `destructiveHint`) and OpenAI domain verification challenge tests.
+- `test/annotations-test.js`: All 31 tool hints (`readOnlyHint`, `openWorldHint`, `destructiveHint`) and OpenAI domain verification challenge tests.
+- `test/crypto-storage-test.js`: AES-256-GCM authenticated encryption at rest, key derivation, tampering resistance, migration, and key-rotation safeguards.
 
 ---
 
