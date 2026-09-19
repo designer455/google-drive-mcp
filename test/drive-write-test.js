@@ -30,9 +30,9 @@ test.after(() => {
   }
 });
 
-test('1. Tool Registry: Verifies all 31 expected tools are registered', () => {
+test('1. Tool Registry: Verifies all 32 expected tools are registered', () => {
   const registered = listMcpTools();
-  assert.equal(registered.length, 31);
+  assert.equal(registered.length, 32);
 
   const names = registered.map(t => t.name);
 
@@ -56,10 +56,11 @@ test('1. Tool Registry: Verifies all 31 expected tools are registered', () => {
   assert.ok(names.includes('drive_restore_file'));
   assert.ok(names.includes('drive_delete_file_permanently'));
 
-  // 4 Docs tools
+  // 5 Docs tools (including drive_docs_batch_update alias)
   assert.ok(names.includes('drive_doc_create'));
   assert.ok(names.includes('drive_doc_read'));
   assert.ok(names.includes('drive_doc_update'));
+  assert.ok(names.includes('drive_docs_batch_update'));
   assert.ok(names.includes('drive_doc_append'));
 
   // 4 Sheets tools
@@ -1579,6 +1580,28 @@ test('DOCS-01: Google Docs Tools (create, read, update, append, formatting, mult
   assert.equal(formatRes.isError, undefined);
   const formatData = JSON.parse(formatRes.content[0].text);
   assert.equal(formatData.success, true);
+
+  // Test 5b — Formatting via drive_docs_batch_update alias
+  const aliasRes = await executeMcpTool('drive_docs_batch_update', {
+    documentId: docId,
+    requests: [
+      {
+        updateTextStyle: {
+          range: {
+            startIndex: 1,
+            endIndex: 10
+          },
+          textStyle: {
+            italic: true
+          },
+          fields: 'italic'
+        }
+      }
+    ]
+  }, mockUserSub);
+  assert.equal(aliasRes.isError, undefined);
+  const aliasData = JSON.parse(aliasRes.content[0].text);
+  assert.equal(aliasData.success, true);
 
   // Test 6 — Append: drive_doc_append adds text at the end
   const appendRes = await executeMcpTool('drive_doc_append', {

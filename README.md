@@ -44,7 +44,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 
 ---
 
-## 2. MCP Tools Reference (31 Tools)
+## 2. MCP Tools Reference (32 Tools)
 
 ### Read Tools (7)
 - **`drive_search`**: Search files matching a query string (e.g., `name contains 'Report' and trashed = false`). Supports pagination and sorting.
@@ -66,7 +66,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 - **`drive_restore_file`**: Restore a trashed file back to active Drive.
 - **`drive_delete_file_permanently`**: Permanently and irreversibly delete a file from Drive (SEC-05 protected: automated retries disabled).
 
-### Google Docs Tools (4)
+### Google Docs Tools (5)
 - **`drive_doc_create`**: Create a native Google Docs document (`application/vnd.google-apps.document`).
   - Parameters: `title` (string, required), `parentFolderId` (string, optional).
   - Returns: `documentId`, `title`, `mimeType`, `webViewLink`, `createdTime`.
@@ -76,6 +76,7 @@ User A (ChatGPT)                   User B (ChatGPT)
 - **`drive_doc_update`**: Perform batch updates using Google Docs API `documents.batchUpdate` (e.g., `insertText`, `replaceAllText`, `updateTextStyle`, `deleteContentRange`, tables).
   - Parameters: `documentId` (string, required), `requests` (array of batchUpdate objects, required).
   - Safety: Tagged `destructiveHint: true` to enforce SEC-05 single-attempt execution without automated retry on transient errors.
+- **`drive_docs_batch_update`**: Dedicated batch update alias matching ChatGPT tool conventions, invoking Google Docs API `documents.batchUpdate`. Identical interface and capabilities as `drive_doc_update`.
 - **`drive_doc_append`**: Convenience tool to append text to the end of a Google Doc.
   - Parameters: `documentId` (string, required), `text` (string, required).
   - Automatically calculates insertion index before the terminal document break and updates the document.

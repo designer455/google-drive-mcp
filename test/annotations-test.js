@@ -67,7 +67,7 @@ function makeRequest({ method = 'GET', path: reqPath, host = 'mcp-v2.digitonsdev
 
 test('1. Every registered MCP tool includes all three annotations', () => {
   const tools = listMcpTools();
-  assert.equal(tools.length, 31);
+  assert.equal(tools.length, 32);
 
   for (const tool of tools) {
     // Top-level hints
@@ -143,6 +143,7 @@ test('4. Destructive and overwriting tools have readOnlyHint: false and destruct
     'drive_trash_file',
     'drive_delete_file_permanently',
     'drive_doc_update',
+    'drive_docs_batch_update',
     'drive_sheet_update_range',
     'drive_slides_update',
     'drive_update_permission',

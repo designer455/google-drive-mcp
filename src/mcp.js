@@ -1437,6 +1437,44 @@ export const TOOLS = [
     }
   },
   {
+    name: 'drive_docs_batch_update',
+    description: 'Batch update an existing Google Doc using Google Docs API batchUpdate operations (insertText, replaceAllText, updateTextStyle, formatting, tables, etc.).',
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+    schema: z.object({
+      documentId: z.string().min(1).describe('The ID of the Google Doc to update'),
+      requests: z.array(z.record(z.any())).min(1).describe('Array of Google Docs API batchUpdate request objects')
+    }),
+    handler: async (args, context) => {
+      const docs = await getDocsClient(context.userSub);
+      const res = await docs.documents.batchUpdate({
+        documentId: args.documentId,
+        requestBody: {
+          requests: args.requests
+        }
+      });
+
+      const documentUrl = `https://docs.google.com/document/d/${args.documentId}/edit`;
+
+      auditLog({
+        userSub: context.userSub,
+        action: 'docs.update',
+        resourceId: args.documentId,
+        resourceType: 'document',
+        status: 'success',
+        details: { requestCount: args.requests.length }
+      });
+
+      return formatSuccess({
+        success: true,
+        documentId: args.documentId,
+        documentUrl,
+        replies: res.data.replies || []
+      });
+    }
+  },
+  {
     name: 'drive_doc_append',
     description: 'Append text to the end of an existing Google Doc.',
     readOnlyHint: false,
