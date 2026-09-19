@@ -14,10 +14,34 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+/**
+ * Clean branding helper: strictly removes and overrides any legacy Digitons
+ * branding or URLs that might still exist in cloud hosting environment variables.
+ */
+export function getCleanBranding() {
+  let name = (process.env.COMPANY_NAME || '').trim();
+  let website = (process.env.COMPANY_WEBSITE || '').trim();
+  let email = (process.env.SUPPORT_EMAIL || '').trim();
+
+  if (!name || /digiton/i.test(name)) {
+    name = 'Google Drive MCP';
+  }
+  if (!website || /digiton/i.test(website)) {
+    website = process.env.MCP_PUBLIC_ORIGIN || 'https://google-drive-mcp-six.vercel.app';
+  }
+  if (!email || /digiton/i.test(email)) {
+    email = 'support@example.com';
+  }
+
+  return {
+    companyName: escapeHtml(name),
+    companyWebsite: escapeHtml(website),
+    supportEmail: escapeHtml(email)
+  };
+}
+
 function getBaseLayout({ title, activeNav, content, description }) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
-  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://github.com/designer455/google-drive-mcp');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
+  const { companyName, companyWebsite, supportEmail } = getCleanBranding();
 
   const pageTitle = activeNav === 'home'
     ? 'Google Drive MCP'
@@ -27,10 +51,10 @@ function getBaseLayout({ title, activeNav, content, description }) {
     ? 'Google Drive MCP is a secure multi-user remote MCP server that allows ChatGPT and OpenAI Agents to access and manage authorized Google Drive files.'
     : `${escapeHtml(title)} for Google Drive MCP.`);
 
-  const publicOrigin = process.env.MCP_PUBLIC_ORIGIN || 'https://mcp.example.com';
+  const publicOrigin = process.env.MCP_PUBLIC_ORIGIN || 'https://google-drive-mcp-six.vercel.app';
   const canonicalUrl = `${publicOrigin}${activeNav === 'home' ? '/' : '/' + activeNav}`;
 
-  return `<!DOCTYPE html>
+  const rawHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -296,15 +320,20 @@ function getBaseLayout({ title, activeNav, content, description }) {
   </footer>
 </body>
 </html>`;
+
+  return rawHtml
+    .replace(/support@digitonsdevelopment\.com/gi, supportEmail)
+    .replace(/https?:\/\/(?:www\.)?digitonsdevelopment\.com[^\s"<]*/gi, companyWebsite)
+    .replace(/digitonsdevelopment\.com/gi, 'google-drive-mcp-six.vercel.app')
+    .replace(/digitons\s*development/gi, companyName)
+    .replace(/digitons/gi, 'Google Drive MCP');
 }
 
 /**
  * GET / - Public landing / overview page
  */
 export function handleRootPage(req, res) {
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
-  const companyWebsite = escapeHtml(process.env.COMPANY_WEBSITE || 'https://github.com/designer455/google-drive-mcp');
+  const { companyName, companyWebsite } = getCleanBranding();
 
   const content = `
     <div class="card">
@@ -372,8 +401,7 @@ export function handleRootPage(req, res) {
  * GET /privacy - Public Privacy Policy page
  */
 export function handlePrivacyPage(req, res) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
+  const { companyName, supportEmail } = getCleanBranding();
 
   const content = `
     <div class="card">
@@ -487,8 +515,7 @@ export function handlePrivacyPage(req, res) {
  * GET /terms - Public Terms of Service page
  */
 export function handleTermsPage(req, res) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
+  const { companyName, supportEmail } = getCleanBranding();
 
   const content = `
     <div class="card">
@@ -582,8 +609,9 @@ export function handleTermsPage(req, res) {
  * GET /support - Public Support and Help Center page
  */
 export function handleSupportPage(req, res) {
-  const companyName = escapeHtml(process.env.COMPANY_NAME || 'Google Drive MCP');
-  const supportEmail = escapeHtml(process.env.SUPPORT_EMAIL || 'support@example.com');
+  const { companyName, supportEmail } = getCleanBranding();
+  const publicOrigin = process.env.MCP_PUBLIC_ORIGIN || 'https://google-drive-mcp-six.vercel.app';
+  const mcpUrl = process.env.MCP_PUBLIC_URL || `${publicOrigin}/mcp`;
 
   const content = `
     <div class="card">
@@ -599,7 +627,7 @@ export function handleSupportPage(req, res) {
         <div class="step-number">Step 1</div>
         <h3>Install the Connector</h3>
         <p>Add the MCP server URL in ChatGPT (<strong>Settings → Connected Apps / MCP</strong>):</p>
-        <code>https://mcp.example.com/mcp</code>
+        <code>${mcpUrl}</code>
       </div>
 
       <div class="step-card">
@@ -613,7 +641,7 @@ export function handleSupportPage(req, res) {
         <div class="step-number">Step 3</div>
         <h3>Open the Secure One-Time Link</h3>
         <p>ChatGPT will reply with a secure connection link unique to your session:</p>
-        <code>https://mcp.example.com/auth/google/link?code=glink_...</code>
+        <code>${publicOrigin}/auth/google/link?code=glink_...</code>
         <p style="font-size:13px;color:#94a3b8;margin-top:8px;">This link is single-use, expires in 10 minutes, and binds your Google account directly to your ChatGPT identity.</p>
       </div>
 

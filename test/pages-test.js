@@ -173,3 +173,28 @@ test('7. Host validation protects public pages against unexpected host headers',
 
   assert.equal(res.status, 403);
 });
+
+test('8. Digitons references are strictly sanitized and never appear even if present in environment variables', async () => {
+  const originalName = process.env.COMPANY_NAME;
+  const originalWebsite = process.env.COMPANY_WEBSITE;
+  const originalEmail = process.env.SUPPORT_EMAIL;
+
+  try {
+    process.env.COMPANY_NAME = 'Digitons Development';
+    process.env.COMPANY_WEBSITE = 'https://www.digitonsdevelopment.com';
+    process.env.SUPPORT_EMAIL = 'support@digitonsdevelopment.com';
+
+    const paths = ['/', '/privacy', '/terms', '/support'];
+    for (const p of paths) {
+      const res = await makeRequest({ path: p });
+      assert.equal(res.status, 200);
+      assert.ok(!/digiton/i.test(res.body), `Digitons reference found on page ${p}`);
+      assert.ok(res.body.includes('Google Drive MCP'));
+    }
+  } finally {
+    process.env.COMPANY_NAME = originalName;
+    process.env.COMPANY_WEBSITE = originalWebsite;
+    process.env.SUPPORT_EMAIL = originalEmail;
+  }
+});
+
