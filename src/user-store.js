@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { auditLog } from './audit.js';
 import {
   safeReadEncryptedJsonSync,
@@ -32,8 +33,29 @@ export {
 const DEFAULT_HOSTINGER_DATA_DIR = '/home/u142843264/.google-drive-mcp-v2';
 
 function resolveDataDir() {
-  const configured = process.env.DATA_DIR || 
-    (process.env.NODE_ENV === 'production' ? DEFAULT_HOSTINGER_DATA_DIR : path.resolve(process.cwd(), 'data'));
+  if (process.env.DATA_DIR) {
+    try {
+      if (!fs.existsSync(process.env.DATA_DIR)) {
+        fs.mkdirSync(process.env.DATA_DIR, { recursive: true, mode: 0o700 });
+      }
+      return process.env.DATA_DIR;
+    } catch {}
+  }
+
+  // If running inside Vercel serverless functions, use os.tmpdir()
+  if (process.env.VERCEL) {
+    const vercelTmp = path.join(os.tmpdir(), '.google-drive-mcp');
+    try {
+      if (!fs.existsSync(vercelTmp)) {
+        fs.mkdirSync(vercelTmp, { recursive: true, mode: 0o700 });
+      }
+      return vercelTmp;
+    } catch {}
+  }
+
+  const configured = process.env.NODE_ENV === 'production' 
+    ? DEFAULT_HOSTINGER_DATA_DIR 
+    : path.resolve(process.cwd(), 'data');
 
   try {
     if (!fs.existsSync(configured)) {
@@ -41,14 +63,16 @@ function resolveDataDir() {
     }
     return configured;
   } catch {
-    // If the path cannot be created (e.g. hostinger path configured in .env when running locally), fallback to local ./data
-    const localData = path.resolve(process.cwd(), 'data');
-    if (!fs.existsSync(localData)) {
+    // If the path cannot be created, fallback to os.tmpdir or local ./data
+    const fallback = process.env.VERCEL 
+      ? path.join(os.tmpdir(), '.google-drive-mcp') 
+      : path.resolve(process.cwd(), 'data');
+    if (!fs.existsSync(fallback)) {
       try {
-        fs.mkdirSync(localData, { recursive: true, mode: 0o700 });
+        fs.mkdirSync(fallback, { recursive: true, mode: 0o700 });
       } catch {}
     }
-    return localData;
+    return fallback;
   }
 }
 

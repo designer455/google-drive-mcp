@@ -50,7 +50,8 @@ app.use((req, res, next) => {
     return next();
   }
 
-  const hostHeader = (req.headers.host || '').split(':')[0].toLowerCase();
+  const rawHost = req.headers['x-forwarded-host'] || req.headers.host || '';
+  const hostHeader = rawHost.split(',')[0].trim().split(':')[0].toLowerCase();
   const isDevOrTest = process.env.NODE_ENV !== 'production' || process.env.NODE_ENV === 'test';
 
   if (isDevOrTest) {
@@ -450,7 +451,9 @@ app.use((err, req, res, next) => {
 // -------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 
-if (process.env.NODE_ENV !== 'test' && !process.env.MCP_NO_LISTEN) {
+const isVercel = Boolean(process.env.VERCEL);
+
+if (process.env.NODE_ENV !== 'test' && !process.env.MCP_NO_LISTEN && !isVercel) {
   // Validate credential encryption key on startup (SEC-04 fail-closed)
   try {
     getStorageEncryptionKey();
