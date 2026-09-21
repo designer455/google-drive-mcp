@@ -154,3 +154,26 @@ test('4. Stateless signed Google Link Tokens and OAuth States work across contai
     }
   );
 });
+
+test('5. Google Link Tokens verify across quoted and whitespace-padded secret variations', async () => {
+  const {
+    createSignedGoogleLinkToken,
+    consumeGoogleLinkToken
+  } = await import('../src/user-store.js');
+
+  const userSub = 'usr_resilience_padded_user_99';
+
+  // Generate token under clean key
+  const originalKey = process.env.STORAGE_ENCRYPTION_KEY;
+  process.env.STORAGE_ENCRYPTION_KEY = '952d616075fe7c69c522d29c50d76b82fcb33e1f9ba61f8a6edabb7cb700cfc5';
+  const token = createSignedGoogleLinkToken(userSub, 60000);
+
+  // Verification container receives key with surrounding quotes and newlines
+  process.env.STORAGE_ENCRYPTION_KEY = '"952d616075fe7c69c522d29c50d76b82fcb33e1f9ba61f8a6edabb7cb700cfc5"\n';
+  const consumedUser = await consumeGoogleLinkToken(token);
+  assert.equal(consumedUser, userSub);
+
+  // Restore
+  process.env.STORAGE_ENCRYPTION_KEY = originalKey;
+});
+

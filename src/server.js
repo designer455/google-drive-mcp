@@ -4,6 +4,7 @@
  */
 
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import express from 'express';
 import {
   handleOAuthMetadata,
@@ -228,12 +229,39 @@ export function mcpUserRateLimiter(req, res, next) {
 // Health Check
 // -------------------------------------------------------------
 app.get('/health', (req, res) => {
+  const cleanKey = (key) => (key || '').trim().replace(/^["']|["']$/g, '');
+  const keyHash = (key) => key ? crypto.createHash('sha256').update(key).digest('hex').slice(0, 8) : null;
+
+  const storageKeyRaw = process.env.STORAGE_ENCRYPTION_KEY || '';
+  const chatgptSecretRaw = process.env.CHATGPT_OAUTH_CLIENT_SECRET || '';
+
   res.json({
     status: 'ok',
     server: 'google-drive-mcp',
     version: '2.0.0',
-    build: 'v2.0.3-docs-batch-update',
-    timestamp: new Date().toISOString()
+    build: 'v2.0.4-multiuser-diagnostics',
+    timestamp: new Date().toISOString(),
+    env_diagnostics: {
+      single_user_mode: process.env.SINGLE_USER_MODE || 'false',
+      storage_key: {
+        configured: Boolean(storageKeyRaw),
+        length: storageKeyRaw.length,
+        has_whitespace: /\s/.test(storageKeyRaw),
+        has_quotes: /^["'].*["']$/.test(storageKeyRaw),
+        hash_prefix_8: keyHash(cleanKey(storageKeyRaw))
+      },
+      chatgpt_client_secret: {
+        configured: Boolean(chatgptSecretRaw),
+        length: chatgptSecretRaw.length,
+        has_whitespace: /\s/.test(chatgptSecretRaw),
+        has_quotes: /^["'].*["']$/.test(chatgptSecretRaw),
+        hash_prefix_8: keyHash(cleanKey(chatgptSecretRaw))
+      },
+      kv_configured: Boolean(
+        (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL) &&
+        (process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN)
+      )
+    }
   });
 });
 

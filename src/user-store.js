@@ -390,12 +390,49 @@ function isSignatureConsumed(sig) {
 }
 
 /**
+ * Robust secret resolver: strips enclosing quotes and whitespace to eliminate
+ * environment variable formatting mismatches across serverless environments.
+ */
+export function getStatelessSigningSecret(fallback) {
+  const rawKey = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET;
+  if (rawKey && typeof rawKey === 'string') {
+    const cleaned = rawKey.trim().replace(/^["']|["']$/g, '');
+    if (cleaned) return cleaned;
+  }
+  return fallback;
+}
+
+/**
+ * Candidate secret resolver: checks cleaned and raw variants of both STORAGE_ENCRYPTION_KEY
+ * and CHATGPT_OAUTH_CLIENT_SECRET to guarantee seamless validation across containers.
+ */
+export function getSecretCandidates(fallback) {
+  const candidates = [];
+  const rawStorage = process.env.STORAGE_ENCRYPTION_KEY;
+  if (rawStorage && typeof rawStorage === 'string') {
+    const clean = rawStorage.trim().replace(/^["']|["']$/g, '');
+    if (clean) candidates.push(clean);
+    if (rawStorage !== clean) candidates.push(rawStorage);
+  }
+  const rawClient = process.env.CHATGPT_OAUTH_CLIENT_SECRET;
+  if (rawClient && typeof rawClient === 'string') {
+    const clean = rawClient.trim().replace(/^["']|["']$/g, '');
+    if (clean && !candidates.includes(clean)) candidates.push(clean);
+    if (rawClient !== clean && !candidates.includes(rawClient)) candidates.push(rawClient);
+  }
+  if (fallback && !candidates.includes(fallback)) {
+    candidates.push(fallback);
+  }
+  return candidates;
+}
+
+/**
  * Generate a cryptographically signed, stateless OAuth state bound to userSub.
  * Enables zero-disk state validation across Vercel serverless containers.
  */
 export function createSignedGoogleOAuthState(userSub, expiresInMs = 600000) {
   if (!userSub) throw new Error('userSub is required');
-  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'gstate-secret-key';
+  const secret = getStatelessSigningSecret('gstate-secret-key');
   const data = {
     sub: userSub,
     exp: Date.now() + expiresInMs,
@@ -416,15 +453,22 @@ export function verifySignedGoogleOAuthState(stateString) {
   const [prefixAndBody, sig] = parts;
   if (!prefixAndBody.startsWith('gstate_')) return null;
 
-  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'gstate-secret-key';
-  const expectedSig = crypto.createHmac('sha256', secret).update(prefixAndBody).digest('base64url');
+  const bufA = Buffer.from(sig);
+  const candidates = getSecretCandidates('gstate-secret-key');
+  let matched = false;
+
+  for (const candidateSecret of candidates) {
+    const expectedSig = crypto.createHmac('sha256', candidateSecret).update(prefixAndBody).digest('base64url');
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+      matched = true;
+      break;
+    }
+  }
+
+  if (!matched) return null;
 
   try {
-    const bufA = Buffer.from(sig);
-    const bufB = Buffer.from(expectedSig);
-    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
-      return null;
-    }
     const bodyStr = prefixAndBody.slice('gstate_'.length);
     const payload = JSON.parse(Buffer.from(bodyStr, 'base64url').toString('utf8'));
     if (payload.exp && Date.now() > payload.exp) {
@@ -551,7 +595,7 @@ export async function consumeGoogleOAuthState(state) {
  */
 export function createSignedGoogleLinkToken(userSub, expiresInMs = 600000) {
   if (!userSub) throw new Error('userSub is required');
-  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'glink-secret-key';
+  const secret = getStatelessSigningSecret('glink-secret-key');
   const data = {
     sub: userSub,
     exp: Date.now() + expiresInMs,
@@ -572,15 +616,22 @@ export function verifySignedGoogleLinkToken(tokenString) {
   const [prefixAndBody, sig] = parts;
   if (!prefixAndBody.startsWith('glink_')) return null;
 
-  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'glink-secret-key';
-  const expectedSig = crypto.createHmac('sha256', secret).update(prefixAndBody).digest('base64url');
+  const bufA = Buffer.from(sig);
+  const candidates = getSecretCandidates('glink-secret-key');
+  let matched = false;
+
+  for (const candidateSecret of candidates) {
+    const expectedSig = crypto.createHmac('sha256', candidateSecret).update(prefixAndBody).digest('base64url');
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+      matched = true;
+      break;
+    }
+  }
+
+  if (!matched) return null;
 
   try {
-    const bufA = Buffer.from(sig);
-    const bufB = Buffer.from(expectedSig);
-    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
-      return null;
-    }
     const bodyStr = prefixAndBody.slice('glink_'.length);
     const payload = JSON.parse(Buffer.from(bodyStr, 'base64url').toString('utf8'));
     if (payload.exp && Date.now() > payload.exp) {
@@ -836,7 +887,7 @@ export async function saveMcpTokens({
  * Mint a self-verifying, HMAC-signed MCP token that survives serverless container restarts.
  */
 export function generateSignedMcpToken(prefix, payload, expiresInMs) {
-  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'mcp-stateless-auth-secret';
+  const secret = getStatelessSigningSecret('mcp-stateless-auth-secret');
   const data = {
     ...payload,
     exp: Date.now() + expiresInMs,
@@ -858,16 +909,22 @@ export function verifySignedMcpToken(tokenString, expectedPrefix = null) {
   const [prefixAndBody, sig] = parts;
   if (expectedPrefix && !prefixAndBody.startsWith(expectedPrefix)) return null;
 
-  const secret = process.env.STORAGE_ENCRYPTION_KEY || process.env.CHATGPT_OAUTH_CLIENT_SECRET || 'mcp-stateless-auth-secret';
-  const expectedSig = crypto.createHmac('sha256', secret).update(prefixAndBody).digest('base64url');
+  const bufA = Buffer.from(sig);
+  const candidates = getSecretCandidates('mcp-stateless-auth-secret');
+  let matched = false;
+
+  for (const candidateSecret of candidates) {
+    const expectedSig = crypto.createHmac('sha256', candidateSecret).update(prefixAndBody).digest('base64url');
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+      matched = true;
+      break;
+    }
+  }
+
+  if (!matched) return null;
 
   try {
-    const bufA = Buffer.from(sig);
-    const bufB = Buffer.from(expectedSig);
-    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
-      return null;
-    }
-
     const prefix = prefixAndBody.startsWith('mcp_at_') ? 'mcp_at_' : (prefixAndBody.startsWith('mcp_rt_') ? 'mcp_rt_' : '');
     const bodyStr = prefixAndBody.slice(prefix.length);
     const payload = JSON.parse(Buffer.from(bodyStr, 'base64url').toString('utf8'));
