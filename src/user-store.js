@@ -170,9 +170,15 @@ function safeReadJsonSync(filePath, defaultValue) {
 // -------------------------------------------------------------
 // Remote KV Store Integration (Vercel KV / Upstash Redis / Redis)
 // -------------------------------------------------------------
+function cleanKvValue(val) {
+  return (val || '').trim().replace(/^["']|["']$/g, '');
+}
+
 function getKvConfig() {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  const rawUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const rawToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url = cleanKvValue(rawUrl);
+  const token = cleanKvValue(rawToken);
   if (url && token) {
     return { url: url.replace(/\/$/, ''), token };
   }
@@ -186,10 +192,26 @@ export function isKvConfigured() {
 export async function kvGetUserGoogleRecord(userSub) {
   const kv = getKvConfig();
   if (!kv || !userSub) return null;
+  const key = `google_user:${userSub}`;
+
   try {
-    const res = await fetch(`${kv.url}/get/${encodeURIComponent(`google_user:${userSub}`)}`, {
+    // 1. Try path-based GET /get/<key>
+    let res = await fetch(`${kv.url}/get/${encodeURIComponent(key)}`, {
       headers: { Authorization: `Bearer ${kv.token}` }
     });
+
+    // 2. Fallback to root POST with command array if path-based fails
+    if (!res.ok) {
+      res = await fetch(`${kv.url}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${kv.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(['GET', key])
+      });
+    }
+
     if (!res.ok) return null;
     const json = await res.json();
     if (!json.result) return null;
@@ -203,16 +225,34 @@ export async function kvGetUserGoogleRecord(userSub) {
 export async function kvSetUserGoogleRecord(userSub, record) {
   const kv = getKvConfig();
   if (!kv || !userSub) return false;
+  const key = `google_user:${userSub}`;
+  const serialized = JSON.stringify(record);
+
   try {
-    const res = await fetch(`${kv.url}/set/${encodeURIComponent(`google_user:${userSub}`)}`, {
+    // 1. Standard Upstash Redis REST command array format (POST / with ["SET", key, val])
+    const res = await fetch(`${kv.url}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${kv.token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(JSON.stringify(record))
+      body: JSON.stringify(['SET', key, serialized])
     });
-    return res.ok;
+
+    if (res.ok) {
+      return true;
+    }
+
+    // 2. Fallback to path-based /set/key endpoint
+    const fallbackRes = await fetch(`${kv.url}/set/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${kv.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(serialized)
+    });
+    return fallbackRes.ok;
   } catch {
     return false;
   }
@@ -221,10 +261,25 @@ export async function kvSetUserGoogleRecord(userSub, record) {
 export async function kvDeleteUserGoogleRecord(userSub) {
   const kv = getKvConfig();
   if (!kv || !userSub) return false;
+  const key = `google_user:${userSub}`;
+
   try {
-    const res = await fetch(`${kv.url}/del/${encodeURIComponent(`google_user:${userSub}`)}`, {
+    // 1. Try path-based GET /del/<key>
+    let res = await fetch(`${kv.url}/del/${encodeURIComponent(key)}`, {
       headers: { Authorization: `Bearer ${kv.token}` }
     });
+
+    // 2. Fallback to root POST with command array
+    if (!res.ok) {
+      res = await fetch(`${kv.url}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${kv.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(['DEL', key])
+      });
+    }
     return res.ok;
   } catch {
     return false;

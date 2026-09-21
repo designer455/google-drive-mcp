@@ -30,6 +30,12 @@ import {
 import { listMcpTools, executeMcpTool } from './mcp.js';
 import { auditLog } from './audit.js';
 import { getStorageEncryptionKey } from './crypto-storage.js';
+import {
+  isKvConfigured,
+  kvSetUserGoogleRecord,
+  kvGetUserGoogleRecord,
+  kvDeleteUserGoogleRecord
+} from './user-store.js';
 
 export const app = express();
 
@@ -228,18 +234,80 @@ export function mcpUserRateLimiter(req, res, next) {
 // -------------------------------------------------------------
 // Health Check
 // -------------------------------------------------------------
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   const cleanKey = (key) => (key || '').trim().replace(/^["']|["']$/g, '');
   const keyHash = (key) => key ? crypto.createHash('sha256').update(key).digest('hex').slice(0, 8) : null;
 
   const storageKeyRaw = process.env.STORAGE_ENCRYPTION_KEY || '';
   const chatgptSecretRaw = process.env.CHATGPT_OAUTH_CLIENT_SECRET || '';
+  const kvConfigured = isKvConfigured();
+
+  let kvVerification = null;
+  if (req.query.verify_kv === '1' || req.query.verify_kv === 'true') {
+    if (!kvConfigured) {
+      kvVerification = {
+        connectivity: 'FAIL',
+        write: 'FAIL',
+        read: 'FAIL',
+        delete: 'FAIL',
+        reason: 'KV not configured in runtime environment'
+      };
+    } else {
+      const probeUserSub = `usr_probe_${crypto.randomBytes(4).toString('hex')}`;
+      const probeRecord = {
+        google: {
+          access_token: 'probe_access_token',
+          refresh_token: 'probe_refresh_token',
+          expiry_date: Date.now() + 3600000
+        },
+        account: {
+          email: 'probe@example.com',
+          displayName: 'Probe Test'
+        },
+        createdAt: new Date().toISOString()
+      };
+
+      try {
+        const writeSuccess = await kvSetUserGoogleRecord(probeUserSub, probeRecord);
+        if (!writeSuccess) {
+          kvVerification = {
+            connectivity: 'FAIL',
+            write: 'FAIL',
+            read: 'FAIL',
+            delete: 'FAIL',
+            error: 'Write operation returned false'
+          };
+        } else {
+          const readRecord = await kvGetUserGoogleRecord(probeUserSub);
+          const readSuccess = Boolean(readRecord?.google?.refresh_token === 'probe_refresh_token');
+          const deleteSuccess = await kvDeleteUserGoogleRecord(probeUserSub);
+          const afterDelete = await kvGetUserGoogleRecord(probeUserSub);
+          const deleteVerified = Boolean(deleteSuccess && !afterDelete);
+
+          kvVerification = {
+            connectivity: 'PASS',
+            write: writeSuccess ? 'PASS' : 'FAIL',
+            read: readSuccess ? 'PASS' : 'FAIL',
+            delete: deleteVerified ? 'PASS' : 'FAIL'
+          };
+        }
+      } catch (err) {
+        kvVerification = {
+          connectivity: 'FAIL',
+          write: 'FAIL',
+          read: 'FAIL',
+          delete: 'FAIL',
+          error: err.message
+        };
+      }
+    }
+  }
 
   res.json({
     status: 'ok',
     server: 'google-drive-mcp',
     version: '2.0.0',
-    build: 'v2.0.4-multiuser-diagnostics',
+    build: 'v2.0.5-kv-persistence',
     timestamp: new Date().toISOString(),
     env_diagnostics: {
       single_user_mode: process.env.SINGLE_USER_MODE || 'false',
@@ -257,10 +325,8 @@ app.get('/health', (req, res) => {
         has_quotes: /^["'].*["']$/.test(chatgptSecretRaw),
         hash_prefix_8: keyHash(cleanKey(chatgptSecretRaw))
       },
-      kv_configured: Boolean(
-        (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL) &&
-        (process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN)
-      )
+      kv_configured: kvConfigured,
+      ...(kvVerification ? { kv_verification: kvVerification } : {})
     }
   });
 });
