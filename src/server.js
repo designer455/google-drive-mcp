@@ -326,6 +326,14 @@ app.get('/health', async (req, res) => {
         hash_prefix_8: keyHash(cleanKey(chatgptSecretRaw))
       },
       kv_configured: kvConfigured,
+      kv_diagnostics: {
+        kv_rest_api_url_configured: Boolean(process.env.KV_REST_API_URL),
+        kv_rest_api_token_configured: Boolean(process.env.KV_REST_API_TOKEN),
+        upstash_redis_rest_url_configured: Boolean(process.env.UPSTASH_REDIS_REST_URL),
+        upstash_redis_rest_token_configured: Boolean(process.env.UPSTASH_REDIS_REST_TOKEN),
+        vercel_kv_rest_api_url_configured: Boolean(process.env.VERCEL_KV_REST_API_URL),
+        vercel_kv_rest_api_token_configured: Boolean(process.env.VERCEL_KV_REST_API_TOKEN)
+      },
       ...(kvVerification ? { kv_verification: kvVerification } : {})
     }
   });

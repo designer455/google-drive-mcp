@@ -175,8 +175,18 @@ function cleanKvValue(val) {
 }
 
 function getKvConfig() {
-  const rawUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const rawToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  const rawUrl = 
+    process.env.KV_REST_API_URL || 
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.UPSTASH_REST_API_URL ||
+    process.env.VERCEL_KV_REST_API_URL;
+
+  const rawToken = 
+    process.env.KV_REST_API_TOKEN || 
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.UPSTASH_REST_API_TOKEN ||
+    process.env.VERCEL_KV_REST_API_TOKEN;
+
   const url = cleanKvValue(rawUrl);
   const token = cleanKvValue(rawToken);
   if (url && token) {
