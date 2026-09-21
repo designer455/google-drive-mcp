@@ -327,6 +327,7 @@ app.get('/health', async (req, res) => {
       },
       kv_configured: kvConfigured,
       kv_diagnostics: {
+        discovered_matching_keys: Object.keys(process.env).filter(k => /kv|upstash|redis/i.test(k)),
         kv_rest_api_url_configured: Boolean(process.env.KV_REST_API_URL),
         kv_rest_api_token_configured: Boolean(process.env.KV_REST_API_TOKEN),
         upstash_redis_rest_url_configured: Boolean(process.env.UPSTASH_REDIS_REST_URL),
