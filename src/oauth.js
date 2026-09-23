@@ -56,19 +56,24 @@ export function validateRedirectUri(redirectUri) {
     return false;
   }
 
-  const configured = process.env.CHATGPT_OAUTH_REDIRECT_URI;
-  if (configured) {
-    const allowed = configured.split(',').map(s => s.trim()).filter(Boolean);
-    return allowed.includes(redirectUri);
+  const rawConfigured = process.env.CHATGPT_OAUTH_REDIRECT_URI;
+  if (rawConfigured) {
+    const allowed = rawConfigured
+      .split(',')
+      .map(s => s.trim().replace(/^["']|["']$/g, '').replace(/\/+$/, ''))
+      .filter(Boolean);
+    const normUri = redirectUri.trim().replace(/\/+$/, '');
+    if (allowed.includes(normUri)) {
+      return true;
+    }
   }
 
-  // Fallback if CHATGPT_OAUTH_REDIRECT_URI is not explicitly set:
   // Strictly allow only verified chatgpt.com subdomains over https, or localhost in dev/test
-  const isDevOrTest = process.env.NODE_ENV !== 'production' || process.env.NODE_ENV === 'test';
   if (parsed.protocol === 'https:' && (parsed.hostname === 'chatgpt.com' || parsed.hostname.endsWith('.chatgpt.com'))) {
     return true;
   }
 
+  const isDevOrTest = process.env.NODE_ENV !== 'production' || process.env.NODE_ENV === 'test';
   if (isDevOrTest && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
     return true;
   }

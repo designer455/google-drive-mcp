@@ -247,6 +247,8 @@ app.get('/health', async (req, res) => {
 
   const storageKeyRaw = process.env.STORAGE_ENCRYPTION_KEY || '';
   const chatgptSecretRaw = process.env.CHATGPT_OAUTH_CLIENT_SECRET || '';
+  const chatgptRedirectRaw = process.env.CHATGPT_OAUTH_REDIRECT_URI || '';
+  const chatgptClientIdRaw = process.env.CHATGPT_OAUTH_CLIENT_ID || '';
   const storageBackend = getStorageBackend();
   const storageConfigured = isStorageConfigured();
 
@@ -436,6 +438,12 @@ app.get('/health', async (req, res) => {
         has_whitespace: /\s/.test(chatgptSecretRaw),
         has_quotes: /^["'].*["']$/.test(chatgptSecretRaw),
         hash_prefix_8: keyHash(cleanKey(chatgptSecretRaw))
+      },
+      chatgpt_redirect_uri: {
+        configured: Boolean(chatgptRedirectRaw),
+        has_whitespace: /\s/.test(chatgptRedirectRaw),
+        has_quotes: /^["'].*["']$/.test(chatgptRedirectRaw),
+        hash_prefix_8: keyHash(cleanKey(chatgptRedirectRaw))
       },
       blob_diagnostics: {
         ...getBlobDiagnostics(),
