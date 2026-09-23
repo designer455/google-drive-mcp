@@ -562,6 +562,19 @@ export async function readEncryptedStorage(filename, defaultValue = {}, key) {
  * @param {string} [ifMatchEtag] - ETag from previous read for concurrency check
  * @returns {Promise<{ etag: string }>}
  */
+/**
+ * Sanitize ETag according to RFC 7232 for If-Match headers.
+ * Strips weak prefix (W/) and surrounding quotes.
+ *
+ * @param {string|null} etag
+ * @returns {string|null}
+ */
+export function sanitizeEtag(etag) {
+  if (!etag || typeof etag !== 'string') return null;
+  const cleaned = etag.replace(/^W\//i, '').replace(/^"|"$/g, '').trim();
+  return cleaned || null;
+}
+
 export async function writeEncryptedStorage(filename, data, key, ifMatchEtag = null) {
   const envelope = encryptData(data, key);
   const serialized = JSON.stringify(envelope, null, 2);
@@ -575,8 +588,9 @@ export async function writeEncryptedStorage(filename, data, key, ifMatchEtag = n
       allowOverwrite: true,
       contentType: 'application/json'
     };
-    if (ifMatchEtag && typeof ifMatchEtag === 'string') {
-      putOptions.ifMatch = ifMatchEtag;
+    const cleanEtag = sanitizeEtag(ifMatchEtag);
+    if (cleanEtag) {
+      putOptions.ifMatch = cleanEtag;
     }
 
     const result = await put(pathname, serialized, putOptions);
@@ -623,12 +637,14 @@ export async function writeEncryptedStorage(filename, data, key, ifMatchEtag = n
  */
 export async function updateEncryptedStorage(filename, modifierFn, defaultValue = {}, key) {
   return storageMutex.runExclusive(async () => {
-    const maxRetries = 5;
+    const maxRetries = 3;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const { data, etag } = await readEncryptedStorage(filename, defaultValue, key);
         const modified = await modifierFn(data);
-        const writeResult = await writeEncryptedStorage(filename, modified, key, etag);
+        // Only use ifMatch on attempt 1; on retries write with allowOverwrite: true to guarantee progress
+        const matchEtag = (attempt === 1) ? etag : null;
+        const writeResult = await writeEncryptedStorage(filename, modified, key, matchEtag);
         return { data: modified, etag: writeResult.etag };
       } catch (err) {
         const isPreconditionFailed = 
@@ -638,15 +654,21 @@ export async function updateEncryptedStorage(filename, modifierFn, defaultValue 
           err.message?.includes('precondition');
 
         if (isPreconditionFailed) {
-          if (attempt === maxRetries) {
-            const conflictErr = new Error(`Concurrent modification conflict for ${filename} after ${maxRetries} attempts.`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            continue;
+          }
+          // Fallback write to prevent losing state or hanging requests
+          try {
+            const { data } = await readEncryptedStorage(filename, defaultValue, key);
+            const modified = await modifierFn(data);
+            const writeResult = await writeEncryptedStorage(filename, modified, key, null);
+            return { data: modified, etag: writeResult.etag };
+          } catch (fallbackErr) {
+            const conflictErr = new Error(`Concurrent modification conflict for ${filename}: ${fallbackErr.message}`);
             conflictErr.code = 'STORAGE_CONFLICT';
             throw conflictErr;
           }
-          // Exponential backoff with random jitter (50-250ms)
-          const delay = Math.floor(Math.random() * 40) + attempt * 50;
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
         }
         throw err;
       }
