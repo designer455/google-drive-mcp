@@ -29,13 +29,15 @@ import {
 } from './pages.js';
 import { listMcpTools, executeMcpTool } from './mcp.js';
 import { auditLog } from './audit.js';
-import { getStorageEncryptionKey } from './crypto-storage.js';
 import {
-  isKvConfigured,
-  kvSetUserGoogleRecord,
-  kvGetUserGoogleRecord,
-  kvDeleteUserGoogleRecord
-} from './user-store.js';
+  getStorageEncryptionKey,
+  getStorageBackend,
+  isStorageConfigured,
+  getBlobDiagnostics,
+  readEncryptedStorage,
+  writeEncryptedStorage,
+  deleteEncryptedStorage
+} from './crypto-storage.js';
 
 export const app = express();
 
@@ -240,66 +242,109 @@ app.get('/health', async (req, res) => {
 
   const storageKeyRaw = process.env.STORAGE_ENCRYPTION_KEY || '';
   const chatgptSecretRaw = process.env.CHATGPT_OAUTH_CLIENT_SECRET || '';
-  const kvConfigured = isKvConfigured();
+  const storageBackend = getStorageBackend();
+  const storageConfigured = isStorageConfigured();
 
-  let kvVerification = null;
-  if (req.query.verify_kv === '1' || req.query.verify_kv === 'true') {
-    if (!kvConfigured) {
-      kvVerification = {
+  // 1. In-invocation storage cycle probe (?verify_storage=1)
+  let storageVerification = null;
+  if (req.query.verify_storage === '1' || req.query.verify_storage === 'true') {
+    const probeId = `probe_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const probeFileName = `probe_${probeId}.enc.json`;
+    const probeSecret = `secret_${crypto.randomBytes(8).toString('hex')}`;
+    const probePayload = {
+      probeId,
+      secret: probeSecret,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      // Step A: Write encrypted record
+      await writeEncryptedStorage(probeFileName, probePayload);
+      
+      // Step B: Read back bypassing cache (useCache: false)
+      const readResult = await readEncryptedStorage(probeFileName, null);
+      const readData = readResult?.data;
+      const decryptedMatch = Boolean(readData && readData.secret === probeSecret);
+
+      // Step C: Delete probe record
+      const deleteSuccess = await deleteEncryptedStorage(probeFileName);
+
+      storageVerification = {
+        connectivity: 'PASS',
+        write: 'PASS',
+        read: readResult ? 'PASS' : 'FAIL',
+        decrypt: decryptedMatch ? 'PASS' : 'FAIL',
+        delete: deleteSuccess ? 'PASS' : 'FAIL'
+      };
+    } catch (err) {
+      storageVerification = {
         connectivity: 'FAIL',
         write: 'FAIL',
         read: 'FAIL',
+        decrypt: 'FAIL',
         delete: 'FAIL',
-        reason: 'KV not configured in runtime environment'
+        error: err.message
       };
-    } else {
-      const probeUserSub = `usr_probe_${crypto.randomBytes(4).toString('hex')}`;
-      const probeRecord = {
-        google: {
-          access_token: 'probe_access_token',
-          refresh_token: 'probe_refresh_token',
-          expiry_date: Date.now() + 3600000
-        },
-        account: {
-          email: 'probe@example.com',
-          displayName: 'Probe Test'
-        },
-        createdAt: new Date().toISOString()
-      };
+    }
+  }
 
-      try {
-        const writeSuccess = await kvSetUserGoogleRecord(probeUserSub, probeRecord);
-        if (!writeSuccess) {
-          kvVerification = {
-            connectivity: 'FAIL',
-            write: 'FAIL',
-            read: 'FAIL',
-            delete: 'FAIL',
-            error: 'Write operation returned false'
+  // 2. Cross-invocation persistence verification probe (?verify_persistence=write|read|cleanup)
+  let persistenceVerification = null;
+  const persistenceAction = (req.query.verify_persistence || '').toLowerCase();
+  const rawProbeId = (req.query.probe_id || '').trim();
+  const safeProbeId = rawProbeId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+
+  if (persistenceAction && safeProbeId) {
+    const persistenceFile = `persistence_probe_${safeProbeId}.enc.json`;
+    try {
+      if (persistenceAction === 'write') {
+        const payload = {
+          probe_id: safeProbeId,
+          value: req.query.probe_value || `value_${Date.now()}`,
+          written_at: new Date().toISOString(),
+          invocation_pid: process.pid
+        };
+        await writeEncryptedStorage(persistenceFile, payload);
+        persistenceVerification = {
+          action: 'write',
+          probe_id: safeProbeId,
+          status: 'SUCCESS'
+        };
+      } else if (persistenceAction === 'read') {
+        const readResult = await readEncryptedStorage(persistenceFile, null);
+        if (readResult && readResult.data) {
+          persistenceVerification = {
+            action: 'read',
+            probe_id: safeProbeId,
+            status: 'SUCCESS',
+            persisted: true,
+            data: readResult.data
           };
         } else {
-          const readRecord = await kvGetUserGoogleRecord(probeUserSub);
-          const readSuccess = Boolean(readRecord?.google?.refresh_token === 'probe_refresh_token');
-          const deleteSuccess = await kvDeleteUserGoogleRecord(probeUserSub);
-          const afterDelete = await kvGetUserGoogleRecord(probeUserSub);
-          const deleteVerified = Boolean(deleteSuccess && !afterDelete);
-
-          kvVerification = {
-            connectivity: 'PASS',
-            write: writeSuccess ? 'PASS' : 'FAIL',
-            read: readSuccess ? 'PASS' : 'FAIL',
-            delete: deleteVerified ? 'PASS' : 'FAIL'
+          persistenceVerification = {
+            action: 'read',
+            probe_id: safeProbeId,
+            status: 'FAIL',
+            persisted: false,
+            reason: 'Record not found in persistent store'
           };
         }
-      } catch (err) {
-        kvVerification = {
-          connectivity: 'FAIL',
-          write: 'FAIL',
-          read: 'FAIL',
-          delete: 'FAIL',
-          error: err.message
+      } else if (persistenceAction === 'cleanup') {
+        const deleted = await deleteEncryptedStorage(persistenceFile);
+        persistenceVerification = {
+          action: 'cleanup',
+          probe_id: safeProbeId,
+          status: 'SUCCESS',
+          deleted
         };
       }
+    } catch (err) {
+      persistenceVerification = {
+        action: persistenceAction,
+        probe_id: safeProbeId,
+        status: 'FAIL',
+        error: err.message
+      };
     }
   }
 
@@ -307,9 +352,13 @@ app.get('/health', async (req, res) => {
     status: 'ok',
     server: 'google-drive-mcp',
     version: '2.0.0',
-    build: 'v2.0.5-kv-persistence',
+    build: 'v2.1.0-vercel-blob-storage',
+    storage_backend: storageBackend,
+    storage_configured: storageConfigured,
     timestamp: new Date().toISOString(),
     env_diagnostics: {
+      storage_backend: storageBackend,
+      storage_configured: storageConfigured,
       single_user_mode: process.env.SINGLE_USER_MODE || 'false',
       storage_key: {
         configured: Boolean(storageKeyRaw),
@@ -325,17 +374,12 @@ app.get('/health', async (req, res) => {
         has_quotes: /^["'].*["']$/.test(chatgptSecretRaw),
         hash_prefix_8: keyHash(cleanKey(chatgptSecretRaw))
       },
-      kv_configured: kvConfigured,
-      kv_diagnostics: {
-        discovered_matching_keys: Object.keys(process.env).filter(k => /kv|upstash|redis/i.test(k)),
-        kv_rest_api_url_configured: Boolean(process.env.KV_REST_API_URL),
-        kv_rest_api_token_configured: Boolean(process.env.KV_REST_API_TOKEN),
-        upstash_redis_rest_url_configured: Boolean(process.env.UPSTASH_REDIS_REST_URL),
-        upstash_redis_rest_token_configured: Boolean(process.env.UPSTASH_REDIS_REST_TOKEN),
-        vercel_kv_rest_api_url_configured: Boolean(process.env.VERCEL_KV_REST_API_URL),
-        vercel_kv_rest_api_token_configured: Boolean(process.env.VERCEL_KV_REST_API_TOKEN)
+      blob_diagnostics: {
+        ...getBlobDiagnostics(),
+        discovered_blob_keys: Object.keys(process.env).filter(k => /blob/i.test(k))
       },
-      ...(kvVerification ? { kv_verification: kvVerification } : {})
+      ...(storageVerification ? { storage_verification: storageVerification } : {}),
+      ...(persistenceVerification ? { persistence_verification: persistenceVerification } : {})
     }
   });
 });

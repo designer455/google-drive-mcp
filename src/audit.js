@@ -25,7 +25,15 @@ const SENSITIVE_KEYS = new Set([
   'ciphertext',
   'key',
   'iv',
-  'tag'
+  'tag',
+  'blob_read_write_token',
+  'blob_token',
+  'blobtoken',
+  'blob_store_id',
+  'blob_url',
+  'bloburl',
+  'oidc_token',
+  'vercel_oidc_token'
 ]);
 
 /**
@@ -33,8 +41,10 @@ const SENSITIVE_KEYS = new Set([
  */
 export function sanitize(data) {
   if (!data || typeof data !== 'object') {
-    if (typeof data === 'string' && data.startsWith('glink_')) {
-      return '[REDACTED]';
+    if (typeof data === 'string') {
+      if (data.startsWith('glink_') || data.includes('blob.vercel-storage.com') || data.startsWith('vercel_blob_')) {
+        return '[REDACTED]';
+      }
     }
     return data;
   }
@@ -50,10 +60,17 @@ export function sanitize(data) {
       SENSITIVE_KEYS.has(lowerKey) ||
       lowerKey.includes('secret') ||
       lowerKey.includes('token') ||
-      lowerKey.includes('state')
+      lowerKey.includes('state') ||
+      lowerKey.includes('blob_url')
     ) {
       sanitized[key] = '[REDACTED]';
-    } else if (typeof value === 'string' && (value.startsWith('glink_') || value.startsWith('ya29.'))) {
+    } else if (
+      typeof value === 'string' &&
+      (value.startsWith('glink_') ||
+       value.startsWith('ya29.') ||
+       value.includes('blob.vercel-storage.com') ||
+       value.startsWith('vercel_blob_'))
+    ) {
       sanitized[key] = '[REDACTED]';
     } else if (typeof value === 'object' && value !== null) {
       sanitized[key] = sanitize(value);
