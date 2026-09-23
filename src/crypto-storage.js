@@ -464,27 +464,12 @@ export function getFilesystemPath(filename) {
   return path.join(baseDir, cleanName);
 }
 
-// Process-level mutex queue to serialize local concurrent operations
-class Mutex {
-  constructor() {
-    this._queue = Promise.resolve();
-  }
-
+// Safe pass-through mutex preserved for API compatibility
+export const storageMutex = {
   async runExclusive(fn) {
-    let release;
-    const next = new Promise(resolve => { release = resolve; });
-    const prev = this._queue;
-    this._queue = prev.then(() => next);
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
+    return await fn();
   }
-}
-
-export const storageMutex = new Mutex();
+};
 
 /**
  * Asynchronously read and decrypt an encrypted JSON store.

@@ -322,73 +322,82 @@ function escapeHtml(str) {
  * POST /authorize - Process user approval, mint authorization code.
  */
 export async function handlePostAuthorize(req, res) {
-  const {
-    client_id,
-    redirect_uri,
-    scope = 'drive',
-    state,
-    code_challenge,
-    code_challenge_method
-  } = req.body;
+  try {
+    const {
+      client_id,
+      redirect_uri,
+      scope = 'drive',
+      state,
+      code_challenge,
+      code_challenge_method
+    } = req.body || {};
 
-  if (!client_id || !redirect_uri) {
-    return res.status(400).json({ error: 'invalid_request', error_description: 'Missing client_id or redirect_uri' });
+    if (!client_id || !redirect_uri) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'Missing client_id or redirect_uri' });
+    }
+
+    // SEC-01: Validate redirect_uri against allowlist / configuration
+    if (!validateRedirectUri(redirect_uri)) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid or unauthorized redirect_uri' });
+    }
+
+    // If client ID is configured, validate it
+    const configuredClient = process.env.CHATGPT_OAUTH_CLIENT_ID;
+    if (configuredClient && client_id !== configuredClient) {
+      return res.status(400).json({ error: 'invalid_client', error_description: 'Invalid client_id' });
+    }
+
+    // SEC-03: Enforce PKCE S256
+    if (!code_challenge || typeof code_challenge !== 'string' || !code_challenge.trim()) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code_challenge. PKCE S256 is required' });
+    }
+
+    if (!code_challenge_method) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code_challenge_method. Only "S256" is supported' });
+    }
+
+    if (code_challenge_method !== 'S256') {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid code_challenge_method. Only "S256" is supported' });
+    }
+
+    // Generate an internal, stable opaque user subject for this MCP user
+    const userSub = generateUserSub();
+    const code = `mcp_code_${crypto.randomBytes(24).toString('hex')}`;
+
+    await saveMcpAuthCode({
+      code,
+      clientId: client_id,
+      redirectUri: redirect_uri,
+      codeChallenge: code_challenge,
+      codeChallengeMethod: code_challenge_method,
+      userSub,
+      scope,
+      expiresInMs: (parseInt(process.env.AUTH_CODE_EXPIRY_SECONDS, 10) || 300) * 1000
+    });
+
+    auditLog({
+      userSub,
+      action: 'auth.mcp_authorize_granted',
+      status: 'success',
+      details: { clientId: client_id }
+    });
+
+    // Redirect back to client with code and original state
+    const targetUrl = new URL(redirect_uri);
+    targetUrl.searchParams.set('code', code);
+    if (state) {
+      targetUrl.searchParams.set('state', state);
+    }
+
+    return res.redirect(targetUrl.toString());
+  } catch (err) {
+    auditLog({
+      action: 'auth.mcp_authorize_error',
+      status: 'failure',
+      details: { error: err.message, stack: err.stack }
+    });
+    return res.status(500).json({ error: 'server_error', error_description: err.message });
   }
-
-  // SEC-01: Validate redirect_uri against allowlist / configuration
-  if (!validateRedirectUri(redirect_uri)) {
-    return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid or unauthorized redirect_uri' });
-  }
-
-  // If client ID is configured, validate it
-  const configuredClient = process.env.CHATGPT_OAUTH_CLIENT_ID;
-  if (configuredClient && client_id !== configuredClient) {
-    return res.status(400).json({ error: 'invalid_client', error_description: 'Invalid client_id' });
-  }
-
-  // SEC-03: Enforce PKCE S256
-  if (!code_challenge || typeof code_challenge !== 'string' || !code_challenge.trim()) {
-    return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code_challenge. PKCE S256 is required' });
-  }
-
-  if (!code_challenge_method) {
-    return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code_challenge_method. Only "S256" is supported' });
-  }
-
-  if (code_challenge_method !== 'S256') {
-    return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid code_challenge_method. Only "S256" is supported' });
-  }
-
-  // Generate an internal, stable opaque user subject for this MCP user
-  const userSub = generateUserSub();
-  const code = `mcp_code_${crypto.randomBytes(24).toString('hex')}`;
-
-  await saveMcpAuthCode({
-    code,
-    clientId: client_id,
-    redirectUri: redirect_uri,
-    codeChallenge: code_challenge,
-    codeChallengeMethod: code_challenge_method,
-    userSub,
-    scope,
-    expiresInMs: (parseInt(process.env.AUTH_CODE_EXPIRY_SECONDS, 10) || 300) * 1000
-  });
-
-  auditLog({
-    userSub,
-    action: 'auth.mcp_authorize_granted',
-    status: 'success',
-    details: { clientId: client_id }
-  });
-
-  // Redirect back to client with code and original state
-  const targetUrl = new URL(redirect_uri);
-  targetUrl.searchParams.set('code', code);
-  if (state) {
-    targetUrl.searchParams.set('state', state);
-  }
-
-  return res.redirect(targetUrl.toString());
 }
 
 // -------------------------------------------------------------
@@ -399,153 +408,162 @@ export async function handlePostAuthorize(req, res) {
  * POST /token - Exchange authorization code or refresh token.
  */
 export async function handlePostToken(req, res) {
-  const { clientId, clientSecret } = extractClientCredentials(req);
-  const grantType = req.body?.grant_type;
+  try {
+    const { clientId, clientSecret } = extractClientCredentials(req);
+    const grantType = req.body?.grant_type;
 
-  // Validate client
-  if (!validateClientCredentials(clientId, clientSecret)) {
-    auditLog({
-      action: 'auth.mcp_token_rejected',
-      status: 'failure',
-      details: { reason: 'invalid_client', clientId }
-    });
-    return res.status(401).json({ error: 'invalid_client', error_description: 'Client authentication failed' });
-  }
-
-  if (grantType === 'authorization_code') {
-    const { code, redirect_uri, code_verifier } = req.body;
-
-    if (!code) {
-      return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code' });
-    }
-
-    let codeRecord;
-    try {
-      codeRecord = await consumeMcpAuthCode(code);
-    } catch (err) {
+    // Validate client
+    if (!validateClientCredentials(clientId, clientSecret)) {
       auditLog({
         action: 'auth.mcp_token_rejected',
         status: 'failure',
-        details: { reason: err.message, code: err.code }
+        details: { reason: 'invalid_client', clientId }
       });
-      return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
+      return res.status(401).json({ error: 'invalid_client', error_description: 'Client authentication failed' });
     }
 
-    // SEC-01: Verify redirect_uri matches and is valid
-    if (!redirect_uri || !validateRedirectUri(redirect_uri) || (codeRecord.redirectUri && codeRecord.redirectUri !== redirect_uri)) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Redirect URI mismatch or invalid' });
-    }
+    if (grantType === 'authorization_code') {
+      const { code, redirect_uri, code_verifier } = req.body || {};
 
-    // SEC-03: Verify PKCE is present and valid
-    if (!codeRecord.codeChallenge) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing PKCE challenge on authorization code' });
-    }
+      if (!code) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code' });
+      }
 
-    if (!code_verifier) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing code_verifier for PKCE challenge' });
-    }
+      let codeRecord;
+      try {
+        codeRecord = await consumeMcpAuthCode(code);
+      } catch (err) {
+        auditLog({
+          action: 'auth.mcp_token_rejected',
+          status: 'failure',
+          details: { reason: err.message, code: err.code }
+        });
+        return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
+      }
 
-    // SEC-02 & SEC-03: Verify PKCE S256 safely without RangeError
-    const valid = verifyCodeChallenge(code_verifier, codeRecord.codeChallenge, codeRecord.codeChallengeMethod || 'S256');
-    if (!valid) {
+      // SEC-01: Verify redirect_uri matches and is valid
+      if (!redirect_uri || !validateRedirectUri(redirect_uri) || (codeRecord.redirectUri && codeRecord.redirectUri !== redirect_uri)) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Redirect URI mismatch or invalid' });
+      }
+
+      // SEC-03: Verify PKCE is present and valid
+      if (!codeRecord.codeChallenge) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing PKCE challenge on authorization code' });
+      }
+
+      if (!code_verifier) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Missing code_verifier for PKCE challenge' });
+      }
+
+      // SEC-02 & SEC-03: Verify PKCE S256 safely without RangeError
+      const valid = verifyCodeChallenge(code_verifier, codeRecord.codeChallenge, codeRecord.codeChallengeMethod || 'S256');
+      if (!valid) {
+        auditLog({
+          userSub: codeRecord.userSub,
+          action: 'auth.pkce_verification_failed',
+          status: 'failure'
+        });
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
+      }
+
+      // Mint access token and refresh token (stateless signed tokens for serverless resilience)
+      const accessExpiresIn = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS, 10) || 3600;
+      const refreshExpiresIn = parseInt(process.env.REFRESH_TOKEN_EXPIRY_SECONDS, 10) || 2592000;
+      const accessToken = generateSignedMcpToken(
+        'mcp_at_',
+        { sub: codeRecord.userSub, cid: codeRecord.clientId, scp: codeRecord.scope },
+        accessExpiresIn * 1000
+      );
+      const refreshToken = generateSignedMcpToken(
+        'mcp_rt_',
+        { sub: codeRecord.userSub, cid: codeRecord.clientId, scp: codeRecord.scope },
+        refreshExpiresIn * 1000
+      );
+
+      await saveMcpTokens({
+        accessToken,
+        refreshToken,
+        userSub: codeRecord.userSub,
+        clientId: codeRecord.clientId,
+        scope: codeRecord.scope,
+        accessExpiresInMs: accessExpiresIn * 1000,
+        refreshExpiresInMs: refreshExpiresIn * 1000
+      });
+
       auditLog({
         userSub: codeRecord.userSub,
-        action: 'auth.pkce_verification_failed',
-        status: 'failure'
+        action: 'auth.mcp_tokens_issued',
+        status: 'success',
+        details: { grantType }
       });
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
+
+      return res.json({
+        access_token: accessToken,
+        token_type: 'Bearer',
+        expires_in: accessExpiresIn,
+        refresh_token: refreshToken,
+        scope: codeRecord.scope
+      });
+    } else if (grantType === 'refresh_token') {
+      const { refresh_token } = req.body || {};
+      if (!refresh_token) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Missing refresh_token' });
+      }
+
+      const tokenRecord = await getMcpToken(refresh_token);
+      if (!tokenRecord || tokenRecord.type !== 'refresh') {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired refresh token' });
+      }
+
+      // Rotate refresh token and issue new access token (stateless signed tokens for serverless resilience)
+      await revokeMcpToken(refresh_token);
+      const accessExpiresIn = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS, 10) || 3600;
+      const refreshExpiresIn = parseInt(process.env.REFRESH_TOKEN_EXPIRY_SECONDS, 10) || 2592000;
+      const newAccessToken = generateSignedMcpToken(
+        'mcp_at_',
+        { sub: tokenRecord.userSub, cid: tokenRecord.clientId, scp: tokenRecord.scope },
+        accessExpiresIn * 1000
+      );
+      const newRefreshToken = generateSignedMcpToken(
+        'mcp_rt_',
+        { sub: tokenRecord.userSub, cid: tokenRecord.clientId, scp: tokenRecord.scope },
+        refreshExpiresIn * 1000
+      );
+
+      await saveMcpTokens({
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        userSub: tokenRecord.userSub,
+        clientId: tokenRecord.clientId,
+        scope: tokenRecord.scope,
+        accessExpiresInMs: accessExpiresIn * 1000,
+        refreshExpiresInMs: refreshExpiresIn * 1000
+      });
+
+      auditLog({
+        userSub: tokenRecord.userSub,
+        action: 'auth.mcp_tokens_refreshed',
+        status: 'success'
+      });
+
+      return res.json({
+        access_token: newAccessToken,
+        token_type: 'Bearer',
+        expires_in: accessExpiresIn,
+        refresh_token: newRefreshToken,
+        scope: tokenRecord.scope
+      });
     }
 
-    // Mint access token and refresh token (stateless signed tokens for serverless resilience)
-    const accessExpiresIn = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS, 10) || 3600;
-    const refreshExpiresIn = parseInt(process.env.REFRESH_TOKEN_EXPIRY_SECONDS, 10) || 2592000;
-    const accessToken = generateSignedMcpToken(
-      'mcp_at_',
-      { sub: codeRecord.userSub, cid: codeRecord.clientId, scp: codeRecord.scope },
-      accessExpiresIn * 1000
-    );
-    const refreshToken = generateSignedMcpToken(
-      'mcp_rt_',
-      { sub: codeRecord.userSub, cid: codeRecord.clientId, scp: codeRecord.scope },
-      refreshExpiresIn * 1000
-    );
-
-    await saveMcpTokens({
-      accessToken,
-      refreshToken,
-      userSub: codeRecord.userSub,
-      clientId: codeRecord.clientId,
-      scope: codeRecord.scope,
-      accessExpiresInMs: accessExpiresIn * 1000,
-      refreshExpiresInMs: refreshExpiresIn * 1000
-    });
-
+    return res.status(400).json({ error: 'unsupported_grant_type', error_description: `Unsupported grant_type "${grantType}"` });
+  } catch (err) {
     auditLog({
-      userSub: codeRecord.userSub,
-      action: 'auth.mcp_tokens_issued',
-      status: 'success',
-      details: { grantType }
+      action: 'auth.mcp_token_error',
+      status: 'failure',
+      details: { error: err.message, stack: err.stack }
     });
-
-    return res.json({
-      access_token: accessToken,
-      token_type: 'Bearer',
-      expires_in: accessExpiresIn,
-      refresh_token: refreshToken,
-      scope: codeRecord.scope
-    });
-  } else if (grantType === 'refresh_token') {
-    const { refresh_token } = req.body;
-    if (!refresh_token) {
-      return res.status(400).json({ error: 'invalid_request', error_description: 'Missing refresh_token' });
-    }
-
-    const tokenRecord = await getMcpToken(refresh_token);
-    if (!tokenRecord || tokenRecord.type !== 'refresh') {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired refresh token' });
-    }
-
-    // Rotate refresh token and issue new access token (stateless signed tokens for serverless resilience)
-    await revokeMcpToken(refresh_token);
-    const accessExpiresIn = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS, 10) || 3600;
-    const refreshExpiresIn = parseInt(process.env.REFRESH_TOKEN_EXPIRY_SECONDS, 10) || 2592000;
-    const newAccessToken = generateSignedMcpToken(
-      'mcp_at_',
-      { sub: tokenRecord.userSub, cid: tokenRecord.clientId, scp: tokenRecord.scope },
-      accessExpiresIn * 1000
-    );
-    const newRefreshToken = generateSignedMcpToken(
-      'mcp_rt_',
-      { sub: tokenRecord.userSub, cid: tokenRecord.clientId, scp: tokenRecord.scope },
-      refreshExpiresIn * 1000
-    );
-
-    await saveMcpTokens({
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-      userSub: tokenRecord.userSub,
-      clientId: tokenRecord.clientId,
-      scope: tokenRecord.scope,
-      accessExpiresInMs: accessExpiresIn * 1000,
-      refreshExpiresInMs: refreshExpiresIn * 1000
-    });
-
-    auditLog({
-      userSub: tokenRecord.userSub,
-      action: 'auth.mcp_tokens_refreshed',
-      status: 'success'
-    });
-
-    return res.json({
-      access_token: newAccessToken,
-      token_type: 'Bearer',
-      expires_in: accessExpiresIn,
-      refresh_token: newRefreshToken,
-      scope: tokenRecord.scope
-    });
+    return res.status(500).json({ error: 'server_error', error_description: err.message });
   }
-
-  return res.status(400).json({ error: 'unsupported_grant_type', error_description: `Unsupported grant_type "${grantType}"` });
 }
 
 // -------------------------------------------------------------
