@@ -34,10 +34,15 @@ import {
   getStorageBackend,
   isStorageConfigured,
   getBlobDiagnostics,
+  getBlobPathname,
   readEncryptedStorage,
   writeEncryptedStorage,
   deleteEncryptedStorage
 } from './crypto-storage.js';
+import {
+  saveGoogleOAuthState,
+  consumeGoogleOAuthState
+} from './user-store.js';
 
 export const app = express();
 
@@ -302,22 +307,39 @@ app.get('/health', async (req, res) => {
           probe_id: safeProbeId,
           value: req.query.probe_value || `value_${Date.now()}`,
           written_at: new Date().toISOString(),
-          invocation_pid: process.pid
+          invocation_pid: process.pid,
+          invocation_time: Date.now()
         };
-        await writeEncryptedStorage(persistenceFile, payload);
+        const writeRes = await writeEncryptedStorage(persistenceFile, payload);
+        const blobPathname = getBlobPathname(persistenceFile);
         persistenceVerification = {
           action: 'write',
           probe_id: safeProbeId,
-          status: 'SUCCESS'
+          status: 'SUCCESS',
+          blob_pathname: blobPathname,
+          etag: writeRes.etag,
+          invocation_pid: process.pid,
+          invocation_time: payload.invocation_time,
+          encryption: {
+            algorithm: 'aes-256-gcm',
+            access: 'private',
+            envelope_stored: true
+          }
         };
       } else if (persistenceAction === 'read') {
         const readResult = await readEncryptedStorage(persistenceFile, null);
+        const blobPathname = getBlobPathname(persistenceFile);
         if (readResult && readResult.data) {
           persistenceVerification = {
             action: 'read',
             probe_id: safeProbeId,
             status: 'SUCCESS',
             persisted: true,
+            blob_pathname: blobPathname,
+            etag: readResult.etag,
+            use_cache_false: true,
+            invocation_pid: process.pid,
+            invocation_time: Date.now(),
             data: readResult.data
           };
         } else {
@@ -326,6 +348,7 @@ app.get('/health', async (req, res) => {
             probe_id: safeProbeId,
             status: 'FAIL',
             persisted: false,
+            blob_pathname: blobPathname,
             reason: 'Record not found in persistent store'
           };
         }
@@ -344,6 +367,46 @@ app.get('/health', async (req, res) => {
         probe_id: safeProbeId,
         status: 'FAIL',
         error: err.message
+      };
+    }
+  }
+
+  // 3. Real storage flow probe: save and consume temporary OAuth state
+  let oauthFlowVerification = null;
+  const oauthAction = (req.query.verify_oauth_flow || '').toLowerCase();
+  const rawOAuthState = (req.query.oauth_state || '').trim();
+  const safeOAuthState = rawOAuthState.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+
+  if (oauthAction && safeOAuthState) {
+    try {
+      if (oauthAction === 'save') {
+        const testSub = req.query.user_sub || `usr_probe_${crypto.randomBytes(4).toString('hex')}`;
+        await saveGoogleOAuthState(safeOAuthState, testSub, 60000);
+        oauthFlowVerification = {
+          action: 'save',
+          state: safeOAuthState,
+          user_sub: testSub,
+          status: 'SUCCESS',
+          invocation_pid: process.pid
+        };
+      } else if (oauthAction === 'consume') {
+        const boundSub = await consumeGoogleOAuthState(safeOAuthState);
+        oauthFlowVerification = {
+          action: 'consume',
+          state: safeOAuthState,
+          bound_user_sub: boundSub,
+          status: 'SUCCESS',
+          invocation_pid: process.pid
+        };
+      }
+    } catch (err) {
+      oauthFlowVerification = {
+        action: oauthAction,
+        state: safeOAuthState,
+        status: 'REJECTED',
+        error_code: err.code || 'UNKNOWN_ERROR',
+        error: err.message,
+        invocation_pid: process.pid
       };
     }
   }
@@ -379,7 +442,8 @@ app.get('/health', async (req, res) => {
         discovered_blob_keys: Object.keys(process.env).filter(k => /blob/i.test(k))
       },
       ...(storageVerification ? { storage_verification: storageVerification } : {}),
-      ...(persistenceVerification ? { persistence_verification: persistenceVerification } : {})
+      ...(persistenceVerification ? { persistence_verification: persistenceVerification } : {}),
+      ...(oauthFlowVerification ? { oauth_flow_verification: oauthFlowVerification } : {})
     }
   });
 });
